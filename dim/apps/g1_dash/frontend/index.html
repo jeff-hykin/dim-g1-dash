@@ -6,8 +6,8 @@
   ../main.js): a C++ helper reading the MID360 lidar (Livox), the RealSense
   camera, and the G1's own state/locomotion over unitree_sdk2. This file is the
   browser panel — it renders the live camera, a 3D lidar point cloud, telemetry
-  (battery, IMU, joint heat, proximity), and sends drive + gait commands back
-  down over the app-bus.
+  (loco FSM, IMU, joint heat, proximity), and sends engage-sequence, posture and
+  drive commands back down over the app-bus.
 
     keyboard:  W/S forward·back   A/D strafe   Q/E turn   Shift boost   Space E-STOP
 -->
@@ -91,16 +91,6 @@
   .card h3 { margin: 0 0 9px; font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
     color: var(--muted-fg); }
 
-  .batt { display: flex; align-items: center; gap: 10px; }
-  .batt .bar { flex: 1; height: 10px; border-radius: 999px; background: color-mix(in oklch, white 10%, transparent);
-    overflow: hidden; border: 1px solid color-mix(in oklch, white 12%, transparent); }
-  .batt .fill { height: 100%; width: 0%; border-radius: 999px; background: var(--ok);
-    transition: width .4s ease, background .4s; }
-  .batt .fill.low { background: #f4b740; } .batt .fill.crit { background: var(--danger); }
-  .batt .pct { font-family: var(--mono); font-size: 13px; font-weight: 600; color: #fff; min-width: 40px; text-align: right; }
-  .batt-sub { margin-top: 6px; font-family: var(--mono); font-size: 10.5px; color: var(--muted-fg);
-    display: flex; justify-content: space-between; }
-
   .kv { display: grid; grid-template-columns: 1fr auto; gap: 3px 8px; font-size: 12px; }
   .kv .k { color: var(--muted-fg); }
   .kv .v { font-family: var(--mono); color: #fff; text-align: right; }
@@ -150,6 +140,8 @@
   .act:active { transform: translateY(1px); }
   .act.good { border-color: color-mix(in oklch, var(--ok) 55%, transparent); color: color-mix(in oklch, var(--ok) 70%, white); }
   .act.warn { border-color: color-mix(in oklch, #f4b740 55%, transparent); color: color-mix(in oklch, #f4b740 78%, white); }
+  select.act { padding: 8px 6px; }
+  select.act option { background: #0c1017; color: #fff; }
 
   /* ── drive d-pad (bottom right) ── */
   .dpad { position: absolute; right: 16px; bottom: 16px; z-index: 9;
@@ -217,12 +209,14 @@
 
     <div class="rail">
       <div class="card">
-        <h3>Battery</h3>
-        <div class="batt">
-          <div class="bar"><div class="fill" id="batt-fill"></div></div>
-          <div class="pct" id="batt-pct">—</div>
+        <h3>Robot</h3>
+        <div class="kv">
+          <span class="k">controller</span><span class="v" id="v-loco">—</span>
+          <span class="k">motion svc</span><span class="v" id="v-motion">—</span>
+          <span class="k">FSM machine</span><span class="v" id="v-fsm">—</span>
+          <span class="k">PR mode</span><span class="v" id="v-pr">—</span>
+          <span class="k">motors</span><span class="v" id="v-motors">—</span>
         </div>
-        <div class="batt-sub"><span id="batt-v">— V</span><span id="batt-a">— A</span></div>
       </div>
 
       <div class="card">
@@ -295,19 +289,27 @@ const MAX_OMEGA = 0.9   // rad/s yaw
 const BOOST = 1.6       // Shift multiplier
 const SEND_HZ = 15      // move-command rate while driving
 
-// gait / posture buttons — name is the helper command, class tints it
+// Mode buttons — name is the helper command, class tints it. "Stand" and
+// "Basic" are multi-step engage sequences (see g1_helper's g1_stand port):
+//   Stand — ai motion service → damp → get-ready → R2+A combo → advanced
+//           controller (FSM 801/802), the one that walks naturally on cmd_vel.
+//   Basic — same start, but ends in FSM 200 with the selected gait.
+// The rest are one-shot FSM postures (refused while a sequence is running).
 const COMMANDS = [
-  { name: "start",        label: "Start",        cls: "good" },
-  { name: "balancestand", label: "Balance",      cls: "good" },
-  { name: "highstand",    label: "High Stand",   cls: "" },
-  { name: "lowstand",     label: "Low Stand",    cls: "" },
-  { name: "squat2standup",label: "Stand Up",     cls: "" },
-  { name: "sit",          label: "Sit",          cls: "" },
-  { name: "wavehand",     label: "Wave",         cls: "" },
-  { name: "shakehand",    label: "Shake",        cls: "" },
-  { name: "zerotorque",   label: "Zero Torque",  cls: "warn" },
-  { name: "damp",         label: "Damp",         cls: "warn" },
+  { name: "stand",      label: "Stand",         cls: "good", seq: true },
+  { name: "balance",    label: "Basic",         cls: "good", seq: true, gait: true },
+  { name: "damp",       label: "Damp",          cls: "warn" },
+  { name: "ready",      label: "Get Ready",     cls: "" },
+  { name: "squat",      label: "Squat",         cls: "" },
+  { name: "sit",        label: "Sit",           cls: "" },
+  { name: "wavehand",   label: "Wave",          cls: "" },
+  { name: "shakehand",  label: "Shake",         cls: "" },
+  { name: "zerotorque", label: "Zero Torque",   cls: "warn" },
 ]
+const GAITS = ["static", "walk", "run"]
+// What the loco service's FSM ids mean, for the Robot card.
+const FSM_LABELS = { 0: "zero torque", 1: "damp", 2: "squat", 3: "sit", 4: "ready",
+  200: "balance (basic)", 500: "start", 801: "advanced", 802: "advanced" }
 
 const els = {
   camWrap: document.getElementById("cam-wrap"),
@@ -319,8 +321,9 @@ const els = {
   sCamera: document.getElementById("s-camera"),
   mode: document.getElementById("mode"),
   estop: document.getElementById("estop"),
-  battFill: document.getElementById("batt-fill"), battPct: document.getElementById("batt-pct"),
-  battV: document.getElementById("batt-v"), battA: document.getElementById("batt-a"),
+  vLoco: document.getElementById("v-loco"), vMotion: document.getElementById("v-motion"),
+  vFsm: document.getElementById("v-fsm"), vPr: document.getElementById("v-pr"),
+  vMotors: document.getElementById("v-motors"),
   horizonSky: document.getElementById("horizon-sky"), horizonYaw: document.getElementById("horizon-yaw"),
   vRoll: document.getElementById("v-roll"), vPitch: document.getElementById("v-pitch"),
   vTemp: document.getElementById("v-temp"), vNear: document.getElementById("v-near"),
@@ -344,16 +347,31 @@ function toast(text) {
 }
 
 // ── command dock ──
+let gaitSelect = null
 for (const cmd of COMMANDS) {
   const button = document.createElement("button")
   button.className = "act " + cmd.cls
   button.textContent = cmd.label
   button.onclick = () => {
     if (!helperReady) return toast("Helper not connected yet")
-    dimApp.send("cmd", { name: cmd.name })
-    toast(cmd.label)
+    const payload = { name: cmd.name }
+    if (cmd.gait && gaitSelect) payload.gait = gaitSelect.value
+    dimApp.send("cmd", payload)
+    toast(cmd.seq ? cmd.label + " — engaging…" : cmd.label)
   }
   els.dock.appendChild(button)
+  if (cmd.gait) {
+    gaitSelect = document.createElement("select")
+    gaitSelect.className = "act"
+    gaitSelect.title = "gait for Basic (FSM 200)"
+    for (const gait of GAITS) {
+      const option = document.createElement("option")
+      option.value = gait
+      option.textContent = gait
+      gaitSelect.appendChild(option)
+    }
+    els.dock.appendChild(gaitSelect)
+  }
 }
 
 els.estop.onclick = () => { dimApp.send("estop", {}); toast("E-STOP — damping") }
@@ -380,15 +398,10 @@ function renderLink() {
 // ── telemetry rendering ──
 function renderState(s) {
   if (!s) return
-  // battery
-  if (typeof s.battery === "number" && s.battery >= 0) {
-    const pct = Math.round(s.battery * 100)
-    els.battFill.style.width = pct + "%"
-    els.battFill.className = "fill" + (pct < 15 ? " crit" : pct < 35 ? " low" : "")
-    els.battPct.textContent = pct + "%"
-  }
-  if (typeof s.voltage === "number") els.battV.textContent = s.voltage.toFixed(1) + " V"
-  if (typeof s.current === "number") els.battA.textContent = s.current.toFixed(1) + " A"
+  // robot / FSM
+  if (typeof s.fsmMachine === "number") els.vFsm.textContent = s.fsmMachine
+  if (typeof s.fsmPr === "number") els.vPr.textContent = s.fsmPr
+  if (typeof s.motorCount === "number") els.vMotors.textContent = s.motorCount
 
   // attitude
   if (Array.isArray(s.rpy)) {
@@ -432,11 +445,38 @@ function onG1(msg) {
       break
     case "ready": helperReady = true; renderLink(); els.camPhText.textContent = "Camera stream starting…"; break
     case "state": renderState(msg); break
+    case "loco": renderLoco(msg); break
+    case "seq": onSeq(msg); break
     case "lidar": onLidar(msg); break
     case "frame": onFrame(msg); break
     case "log": break
     case "error": toast(msg.msg || "helper error"); break
   }
+}
+
+// ── loco controller status (polled by the helper at 1 Hz) ──
+function renderLoco(msg) {
+  if (typeof msg.fsm === "number") {
+    const label = FSM_LABELS[msg.fsm]
+    els.vLoco.textContent = msg.fsm < 0 ? "unreachable" : (label ? `${label} (${msg.fsm})` : msg.fsm)
+  }
+  if (typeof msg.motionMode === "string") els.vMotion.textContent = msg.motionMode
+  if (msg.mode && !msg.seqRunning) {
+    els.mode.textContent = msg.mode
+    els.mode.className = "mode " + (msg.mode === "walking" ? "walking" : (msg.mode === "damp" || msg.mode === "zerotorque") ? "damp" : "")
+  }
+}
+
+// ── engage-sequence progress (the g1_stand flow streaming step events) ──
+function onSeq(msg) {
+  const text = `${msg.seq}: ${msg.step} ${msg.state}`
+  if (msg.step === "sequence") {
+    toast(msg.state === "done" ? `${msg.seq} — engaged` : `${msg.seq} — ${msg.state}`)
+  } else if (msg.state !== "start") {
+    toast(text)
+  }
+  els.mode.textContent = msg.step === "sequence" ? (msg.state === "done" ? "ready to drive" : msg.state) : text
+  els.mode.className = "mode" + (msg.state === "failed" || msg.state === "timeout" ? " damp" : "")
 }
 
 // optional dimos LCM streams (forwarded by the backend) — surface unknown ones as a hint

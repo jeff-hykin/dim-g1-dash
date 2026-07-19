@@ -77,7 +77,7 @@ int main(int argc, char** argv) {
                                  message.value("omega", 0.0));
         } else if (type == "cmd") {
             const std::string name = message.value("name", "");
-            if (!unitree.command(name)) {
+            if (!unitree.command(name, message.value("gait", "static"))) {
                 protocol.error("unknown or failed command: " + name);
             }
         } else if (type == "estop") {

@@ -9,12 +9,17 @@ talks straight to its hardware:
 
 - **Live camera** — the onboard Intel RealSense color stream.
 - **3D lidar** — the MID360 (Livox) point cloud, rendered live with three.js.
-- **Telemetry** — battery, IMU attitude (roll/pitch/yaw with an artificial
-  horizon), hottest joint temperature, and nearest-obstacle / center-depth
-  proximity.
-- **Control** — drive with `W A S D` (+ `Q`/`E` to turn, `Shift` to boost) or the
-  on-screen d-pad, plus one-tap gaits: Balance, Stand, Sit, Wave, Damp, Zero
-  Torque, … `Space` is a hardware-style **E-STOP**.
+- **Telemetry** — loco controller FSM + resident motion service, IMU attitude
+  (roll/pitch/yaw with an artificial horizon), hottest joint temperature, and
+  nearest-obstacle / center-depth proximity.
+- **Control** — one-tap **Stand** runs the full engage sequence (the dimos
+  `bin/g1_stand` flow, ported to C++): switch to the "ai" motion service, damp,
+  get-ready, then emulate a held R2+A on the wireless-controller topic to enter
+  the advanced balance controller (FSM 801/802) — the one that walks naturally.
+  Then drive with `W A S D` (+ `Q`/`E` to turn, `Shift` to boost) or the
+  on-screen d-pad. **Basic** engages the FSM 200 fallback with a selectable gait
+  (static/walk/run); Damp, Get Ready, Sit, Squat, Wave, Shake and Zero Torque are
+  one-shots. `Space` is a hardware-style **E-STOP** (aborts sequences too).
 
 | Camera + controls | Lidar point cloud |
 | --- | --- |

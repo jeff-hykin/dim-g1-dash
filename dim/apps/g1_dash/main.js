@@ -139,7 +139,8 @@ dimApp.onReceive((kind, payload) => {
     if (kind === "move") {
         sendToHelper({ type: "move", vx: payload?.vx || 0, vy: payload?.vy || 0, omega: payload?.omega || 0 })
     } else if (kind === "cmd") {
-        sendToHelper({ type: "cmd", name: payload?.name })
+        // name plus any extras (e.g. gait for the basic balance sequence)
+        sendToHelper({ type: "cmd", ...(payload || {}) })
     } else if (kind === "estop") {
         sendToHelper({ type: "estop" })
     } else if (kind === "config") {

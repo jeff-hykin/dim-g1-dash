@@ -29,11 +29,31 @@
           version = "unstable";
           src     = livox-sdk2;
           nativeBuildInputs = [ pkgs.cmake ];
-          # The bundled samples aren't needed and drag in extra time; the tree
-          # still installs the lib + headers without them.
-          cmakeFlags = [ "-DCMAKE_BUILD_TYPE=Release" ];
-          # Some tags gate samples behind a subdir with no toggle; if it ever
-          # fails on samples, add `-DBUILD_SAMPLE=OFF` here.
+          # Livox-SDK2's CMakeLists declares a cmake_minimum_required below 3.5,
+          # which current cmake refuses; the policy-min flag lets it configure.
+          cmakeFlags = [
+            "-DCMAKE_BUILD_TYPE=Release"
+            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
+          ];
+          # Livox's headers use uint64_t without <cstdint>; gcc 13+ no longer
+          # includes it transitively, so force it into every C++ unit.
+          env.CXXFLAGS = "-include cstdint";
+          # Both Livox and unitree_sdk2 vendor their own (different) rapidjson as
+          # weak inline (COMDAT) symbols. Linked into one binary the linker
+          # dedups the mismatched layouts and Livox's config parser corrupts its
+          # allocator and segfaults; merely localizing them instead breaks the
+          # link once unitree's copy is also pulled in (Livox's COMDAT groups get
+          # discarded while its localized references still point at them). So
+          # rename Livox's rapidjson symbols outright — definitions and
+          # references stay consistent inside the archive and can never collide
+          # with unitree's copy.
+          postFixup = ''
+            archive=$out/lib/liblivox_lidar_sdk_static.a
+            nm --defined-only "$archive" 2>/dev/null \
+              | awk '$3 ~ /rapidjson/ { print $3 " livox_" $3 }' \
+              | sort -u > rapidjson-rename.map
+            objcopy --redefine-syms=rapidjson-rename.map "$archive"
+          '';
         };
 
         # ── unitree_sdk2 — G1 DDS control + state (LocoClient, LowState) ─────
@@ -47,8 +67,16 @@
           # Prebuilt .so files (CycloneDDS) carry no nix RPATH; autoPatchelf
           # rewrites their loader so the DDS transport resolves at runtime.
           nativeBuildInputs = [ pkgs.cmake pkgs.autoPatchelfHook ];
-          buildInputs       = [ pkgs.eigen ];
-          cmakeFlags = [ "-DCMAKE_BUILD_TYPE=Release" ];
+          # eigen for the SDK; cc.cc.lib gives autoPatchelf the libstdc++/libgcc_s
+          # the prebuilt CycloneDDS .so files need.
+          buildInputs       = [ pkgs.eigen pkgs.stdenv.cc.cc.lib ];
+          # We only need the library + headers; the bundled examples pull in
+          # unvendored deps (spdlog) and don't build, so switch them off.
+          cmakeFlags = [
+            "-DCMAKE_BUILD_TYPE=Release"
+            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
+            "-DBUILD_EXAMPLES=OFF"
+          ];
           dontStrip = true;
         };
 
