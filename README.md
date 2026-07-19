@@ -7,7 +7,9 @@ Unlike [dim-go2-dash](https://github.com/jeff-hykin/dim-go2-dash) (which discove
 and provisions a quadruped from a laptop), G1 Dash lives on the G1 itself and
 talks straight to its hardware:
 
-- **Live camera** — the onboard Intel RealSense color stream.
+- **Live camera** — the onboard RealSense color node, read via plain Linux V4L2
+  (no librealsense, so other consumers keep the depth/IR nodes) and served as an
+  MJPEG video stream the panel plays directly.
 - **3D lidar** — the MID360 (Livox) point cloud, rendered live with three.js.
 - **Telemetry** — loco controller FSM + resident motion service, IMU attitude
   (roll/pitch/yaw with an artificial horizon), hottest joint temperature, and

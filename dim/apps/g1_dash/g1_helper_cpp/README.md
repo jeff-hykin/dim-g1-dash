@@ -7,16 +7,25 @@ newline-JSON protocol on stdio. The Deno backend (`../main.js`) launches it with
 
 ```
 stdin  (commands)              stdout (telemetry, one JSON object per line)
-  move / cmd / estop / config    ready · status · state · loco · seq · lidar · frame · log · error
+  move / cmd / estop / config    ready · status · state · loco · seq · lidar · log · error
         │                              ▲
         ▼                              │
   ┌───────────────────────────────────────────┐
   │  g1_helper (C++)                           │
   │   UnitreeBridge  unitree_sdk2 (DDS)  ──► G1 locomotion + low state
   │   Mid360         Livox-SDK2          ──► MID360 point cloud
-  │   RealSense      librealsense2       ──► color + depth camera
+  │   Webcam         plain V4L2 + turbojpeg ──► MJPEG video on its own HTTP port
   └───────────────────────────────────────────┘
 ```
+
+The camera is read through the **plain Linux V4L2 API** (no librealsense): the
+helper auto-picks the first `/dev/video*` node that can stream YUYV or MJPG —
+on the G1 that's the RealSense's color node — and serves it as
+`multipart/x-mixed-replace` MJPEG on its own HTTP port. The panel points an
+`<img>` straight at it: continuous video, no frames over the app-bus. Using the
+webcam API leaves the RealSense's depth/IR nodes free for other consumers, and
+if the color node is busy or unplugged the helper just retries every few
+seconds until it gets it.
 
 ## Build / run
 
@@ -28,8 +37,7 @@ nix run   # first run compiles the SDKs (minutes); cached after
 
 The two SDKs that aren't in nixpkgs — `unitree_sdk2`, `Livox-SDK2` — are pinned
 as flake inputs (see `flake.lock`), so the build is reproducible without any
-hand-managed hashes. `librealsense`, `nlohmann_json`, and `libjpeg_turbo` come
-from nixpkgs.
+hand-managed hashes. `nlohmann_json` and `libjpeg_turbo` come from nixpkgs.
 
 ## Runtime configuration (env vars)
 
@@ -38,6 +46,8 @@ from nixpkgs.
 | `G1_NET_IFACE` | `eth0` | Interface the unitree DDS transport binds to |
 | `G1_LIDAR_HOST_IP` | `192.168.1.5` | Jetson IP on the MID360 subnet |
 | `G1_LIDAR_IP` | `192.168.1.100` | MID360's IP |
+| `G1_CAM_DEVICE` | auto | V4L2 node to stream (else first YUYV/MJPG-capable one) |
+| `G1_CAM_PORT` | `8190` | Port for the MJPEG HTTP stream |
 
 The MID360 network config JSON is generated from those at startup — nothing to
 ship or hand-edit.
@@ -63,11 +73,11 @@ One-shot names: `damp`, `ready` (alias `standup`), `squat`, `sit`, `zerotorque`,
 `balancestand`, `highstand`, `lowstand`, `wavehand`, `shakehand`. One-shots are
 refused while a sequence is running — E-STOP aborts it.
 
-**Telemetry (stdout):** `ready`, `status`, `state` (IMU rpy/gyro/accel, hottest
-joint, FSM machine), `loco` (1 Hz: loco FSM id, resident motion service, mode
-label), `seq` (engage-sequence step progress), `lidar` (downsampled flat
-`[x,y,z,…]` cloud + nearest range), `frame` (base64 JPEG + center depth), `log`,
-`error`.
+**Telemetry (stdout):** `ready`, `status` (subsystem up/down + `camPort` for the
+MJPEG stream), `state` (IMU rpy/gyro/accel, hottest joint, FSM machine), `loco`
+(1 Hz: loco FSM id, resident motion service, mode label), `seq` (engage-sequence
+step progress), `lidar` (downsampled flat `[x,y,z,…]` cloud + nearest range),
+`log`, `error`. Video is **not** on stdout — it streams from the MJPEG port.
 
 ## The stand sequence (ported from dimos `bin/g1_stand`)
 
@@ -98,3 +108,9 @@ arriving (~0.4 s staleness window). If the panel stalls, the pipe closes, or thi
 process dies, the robot stops on its own — there's no latched motion. Process
 exit deliberately does **not** damp: collapsing a balanced robot because the
 dashboard restarted would be worse than leaving the onboard controller in charge.
+
+Command danger tiers (surfaced as confirmation dialogs in the panel):
+**dangerous** — `damp` / `zerotorque` (the robot goes limp and falls if
+standing) and `stand` / `balance` (self-balancing: the robot takes torque
+control); **not dangerous** — gait switching (`SetBalanceMode`) and `ready`
+(the stiffen/leg-straighten step before balancing), postures, hand gestures.

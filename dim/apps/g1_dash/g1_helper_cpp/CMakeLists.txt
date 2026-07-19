@@ -8,10 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(Threads REQUIRED)
 find_package(nlohmann_json REQUIRED)
 
-# RealSense — nixpkgs installs a realsense2 CMake config.
-find_package(realsense2 REQUIRED)
-
-# turbojpeg — encode RealSense color frames to JPEG for the panel.
+# turbojpeg — encode V4L2 camera frames to JPEG for the MJPEG stream.
 find_library(TURBOJPEG_LIB turbojpeg REQUIRED)
 find_path(TURBOJPEG_INCLUDE_DIR turbojpeg.h REQUIRED)
 
@@ -31,7 +28,7 @@ add_executable(g1_helper
   src/protocol.cpp
   src/unitree_bridge.cpp
   src/mid360.cpp
-  src/realsense.cpp
+  src/webcam.cpp
 )
 
 target_include_directories(g1_helper PRIVATE
@@ -42,7 +39,6 @@ target_include_directories(g1_helper PRIVATE
 target_link_libraries(g1_helper PRIVATE
   Threads::Threads
   nlohmann_json::nlohmann_json
-  realsense2::realsense2
   unitree_sdk2
   ${LIVOX_LIB}
   ${TURBOJPEG_LIB}

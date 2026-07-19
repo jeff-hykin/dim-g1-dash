@@ -4,7 +4,7 @@
 // JSON-line protocol the Deno backend speaks:
 //   * UnitreeBridge — G1 state + locomotion control (unitree_sdk2, DDS)
 //   * Mid360        — MID360 lidar point cloud (Livox-SDK2)
-//   * RealSense     — color/depth camera (librealsense2)
+//   * Webcam        — RealSense color node via plain V4L2, served as MJPEG video
 //
 // Each subsystem starts independently; a failure in one (e.g. no camera plugged
 // in) is reported in the status event and the rest still run. Commands arrive on
@@ -14,16 +14,18 @@
 // re-issues a velocity while fresh commands keep arriving (see kVelocityStaleAfter
 // in unitree_bridge.cpp), so a dropped pipe halts motion within ~0.4 s.
 
+#include <chrono>
 #include <cstdlib>
 #include <iostream>
 #include <string>
+#include <thread>
 
 #include <nlohmann/json.hpp>
 
 #include "mid360.hpp"
 #include "protocol.hpp"
-#include "realsense.hpp"
 #include "unitree_bridge.hpp"
+#include "webcam.hpp"
 
 namespace {
 
@@ -45,7 +47,7 @@ int main(int argc, char** argv) {
 
     g1::UnitreeBridge unitree(protocol, network_interface);
     g1::Mid360 lidar(protocol);
-    g1::RealSense camera(protocol);
+    g1::Webcam camera(protocol);
 
     const bool unitree_ok = unitree.start();
     const bool lidar_ok = lidar.start();
@@ -56,6 +58,7 @@ int main(int argc, char** argv) {
         {"unitree", unitree_ok},
         {"lidar", lidar_ok},
         {"camera", camera_ok},
+        {"camPort", camera.port()},
         {"iface", network_interface},
     });
     protocol.emit({{"type", "ready"}});
@@ -88,6 +91,12 @@ int main(int argc, char** argv) {
         }
     }
 
+    // stdin closed — shut down, but never hang the exit: SDK teardowns (DDS,
+    // Livox, a UVC open stuck on a resetting camera) can block indefinitely.
+    std::thread([] {
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+        std::_Exit(0);
+    }).detach();
     camera.stop();
     lidar.stop();
     unitree.stop();

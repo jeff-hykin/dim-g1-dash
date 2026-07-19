@@ -1,5 +1,5 @@
 {
-  description = "g1_helper — onboard C++ bridge for the Unitree G1: MID360 (Livox) + RealSense + unitree_sdk2, for dim-g1-dash";
+  description = "g1_helper — onboard C++ bridge for the Unitree G1: MID360 (Livox) + V4L2 camera MJPEG + unitree_sdk2, for dim-g1-dash";
 
   # The three robot SDKs aren't in nixpkgs, so we pull them as *source* flake
   # inputs (flake = false) and build each one ourselves below. Because they're
@@ -88,8 +88,7 @@
           nativeBuildInputs = [ pkgs.cmake pkgs.pkg-config ];
           buildInputs = [
             pkgs.nlohmann_json      # JSON line protocol
-            pkgs.librealsense       # RealSense depth/color camera
-            pkgs.libjpeg_turbo      # turbojpeg — encode color frames for the panel
+            pkgs.libjpeg_turbo      # turbojpeg — encode V4L2 frames for the MJPEG stream
             unitreeSdk
             livoxSdk
           ];
