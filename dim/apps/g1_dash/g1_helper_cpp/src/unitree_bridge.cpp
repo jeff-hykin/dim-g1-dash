@@ -252,6 +252,15 @@ int UnitreeBridge::query_fsm_id() {
     return fsm_id;
 }
 
+// 0 = balance in place (BalanceStand), 1 = walk, 2 = run. Meaningful only while
+// a balancing controller is active; -1 if the service doesn't answer.
+int UnitreeBridge::query_balance_mode() {
+    int balance_mode = -1;
+    std::lock_guard<std::mutex> guard(rpc_mutex_);
+    if (static_cast<LocoClient*>(loco_client_)->GetBalanceMode(balance_mode) != 0) return -1;
+    return balance_mode;
+}
+
 std::string UnitreeBridge::query_motion_mode() {
     std::string form, name;
     std::lock_guard<std::mutex> guard(rpc_mutex_);
@@ -450,6 +459,7 @@ void UnitreeBridge::status_loop() {
         protocol_.emit({
             {"type", "loco"},
             {"fsm", query_fsm_id()},
+            {"balance", query_balance_mode()},
             {"motionMode", query_motion_mode()},
             {"seqRunning", sequence_running_.load()},
             {"mode", mode},

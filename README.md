@@ -33,14 +33,15 @@ talks straight to its hardware:
 
 The panel names what the robot **is doing** rather than exposing the SDK's FSM
 ids, and each mode button says which mode it puts the robot into. The current
-mode is read back from the loco service (so it's the robot's own answer, not
-what we last asked for) and shown in the top bar.
+mode is read back from the loco service — both its FSM id (which controller is
+running) and its balance mode (whether that controller steps or holds still) —
+so it's the robot's own answer, not what we last asked for.
 
 | Mode | What it means |
 | --- | --- |
 | `walk` | advanced controller — natural walking, accepts drive commands |
-| `walk_basic` | basic controller — stompier walking, accepts drive commands; a gait picker (hold still / walk / run) sits next to it |
-| `stand` | balance-standing in place, no drive commands |
+| `walk_basic` | basic controller — stompier walking, accepts drive commands; a gait picker (walk / run) sits next to it |
+| `stand` | a walking controller that's holding still instead of stepping — still balancing, still under torque control |
 | `stiffen` | joints locked and legs straight, not balancing yet — the step before standing |
 | `squat` / `sit` | crouched / seated |
 | `collapse` | damped: joints limp, the robot rests on whatever holds it |

@@ -88,7 +88,9 @@
     background: color-mix(in oklch, black 46%, transparent); backdrop-filter: blur(4px);
     border: 1px solid color-mix(in oklch, white 16%, transparent); border-radius: 999px; padding: 5px 12px; }
   .mode.walking { color: color-mix(in oklch, var(--primary) 65%, white); border-color: color-mix(in oklch, var(--primary) 40%, transparent); }
-  .mode.damp, .mode.zerotorque { color: color-mix(in oklch, #f4b740 74%, white); }
+  /* collapse / limp — the robot is not holding itself up */
+  .mode.damp { color: #ff6a5b; border-color: color-mix(in oklch, #ff2626 45%, transparent);
+    background-color: color-mix(in oklch, #ff2626 14%, color-mix(in oklch, black 46%, transparent)); }
 
   .estop { appearance: none; cursor: pointer; font: inherit; font-size: 12px; font-weight: 800;
     letter-spacing: .08em; text-transform: uppercase; color: #fff;
@@ -153,21 +155,33 @@
     mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent); }
   .dock::-webkit-scrollbar { height: 6px; }
   .dock::-webkit-scrollbar-thumb { background: color-mix(in oklch, white 22%, transparent); border-radius: 3px; }
+  /* background-color (not the `background` shorthand) so select.act's chevron
+     background-image survives hover / disabled / active-mode states */
   .act { appearance: none; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; letter-spacing: .03em;
-    white-space: nowrap; flex: 0 0 auto; color: #fff; background: color-mix(in oklch, black 44%, transparent);
+    white-space: nowrap; flex: 0 0 auto; color: #fff; background-color: color-mix(in oklch, black 44%, transparent);
     backdrop-filter: blur(4px); border: 1px solid color-mix(in oklch, white 16%, transparent);
-    border-radius: var(--radius); padding: 9px 14px; transition: background .14s, border-color .14s; }
-  .act:hover { background: color-mix(in oklch, black 28%, transparent); border-color: var(--ring); }
+    border-radius: var(--radius); padding: 9px 14px; transition: background-color .14s, border-color .14s; }
+  .act:hover { background-color: color-mix(in oklch, black 28%, transparent); border-color: var(--ring); }
   .act:active { transform: translateY(1px); }
   .act.good { border-color: color-mix(in oklch, var(--ok) 55%, transparent); color: color-mix(in oklch, var(--ok) 70%, white); }
-  .act.warn { border-color: color-mix(in oklch, #f4b740 55%, transparent); color: color-mix(in oklch, #f4b740 78%, white); }
+  /* the two modes that drop the robot — same red as their confirm dialog */
+  .act.bad { border-color: color-mix(in oklch, #ff2626 60%, transparent); color: #ff6a5b;
+    background-color: color-mix(in oklch, #ff2626 12%, color-mix(in oklch, black 44%, transparent)); }
+  .act.bad:hover { border-color: #ff5b4d; color: #ff8577;
+    background-color: color-mix(in oklch, #ff2626 22%, color-mix(in oklch, black 28%, transparent)); }
+  .act.bad.active-mode { background-color: color-mix(in oklch, #ff2626 34%, transparent);
+    border-color: #ff5b4d; color: #fff; }
   /* greyed out: this command needs a mode the robot isn't in (title says which) */
   .act:disabled { opacity: .38; cursor: not-allowed; }
-  .act:disabled:hover { background: color-mix(in oklch, black 44%, transparent); border-color: color-mix(in oklch, white 16%, transparent); }
+  .act:disabled:hover { background-color: color-mix(in oklch, black 44%, transparent); border-color: color-mix(in oklch, white 16%, transparent); }
   /* the mode the robot is currently in */
-  .act.active-mode { background: color-mix(in oklch, var(--primary) 26%, transparent);
+  .act.active-mode { background-color: color-mix(in oklch, var(--primary) 26%, transparent);
     border-color: var(--primary); color: #fff; }
-  select.act { padding: 8px 6px; }
+  /* appearance:none drops the native arrow, so draw one and leave room for it —
+     without the extra right padding the last glyph of a label gets clipped */
+  select.act { padding: 9px 28px 9px 12px; text-overflow: ellipsis;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' fill='none' stroke='%23ffffff' stroke-opacity='.65' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'><path d='M1 1.6 6 6.4 11 1.6'/></svg>");
+    background-repeat: no-repeat; background-position: right 10px center; background-size: 10px 7px; }
   select.act option { background: #0c1017; color: #fff; }
 
   /* ── drive pad (bottom right) ──
@@ -428,8 +442,10 @@ const MODES = {
                 blurb: "advanced controller — natural walking, accepts drive commands" },
   walk_basic: { label: "walk_basic", fsms: [200],
                 blurb: "basic controller — stompier walking, accepts drive commands" },
+  // Not an FSM of its own: it's a balancing controller with balance mode 0, so
+  // the robot holds still instead of stepping. Resolved from the balance mode.
   stand:      { label: "stand",      fsms: [],
-                blurb: "balance-standing in place — no drive commands" },
+                blurb: "balancing but holding still — Walk/Walk (basic) to step again" },
   stiffen:    { label: "stiffen",    fsms: [4],
                 blurb: "joints locked and legs straight, not balancing yet" },
   squat:      { label: "squat",      fsms: [2], blurb: "crouched" },
@@ -459,13 +475,17 @@ const COMMANDS = [
     warn: "The robot will straighten its legs and take torque control to self-balance, then walk on command. Make sure the G1 is on a gantry or on flat ground with clear space around it." },
   { name: "balance", mode: "walk_basic", label: "Walk (basic)", cls: "good", seq: true, gait: true, danger: "amber",
     warn: "The robot will straighten its legs and self-balance under the basic controller, which walks with a stompier gait than <b>Walk</b>. Make sure the G1 is on a gantry or on flat ground with clear space around it." },
-  { name: "balancestand", mode: "stand", label: "Stand", cls: "good", danger: "amber",
-    warn: "The robot takes torque control and balance-stands in place (it will not accept drive commands). Make sure it is upright with its feet under it — from a slump or a hang this will jerk the joints." },
+  // Same call as balance mode 0 — it stops the robot stepping while it keeps
+  // balancing, so it only applies once a walking controller is already up (and
+  // isn't dangerous: the robot is holding itself up either way).
+  { name: "balancestand", mode: "stand", label: "Stand", cls: "good",
+    requires: ["walk", "walk_basic", "stand"],
+    hint: "stop stepping and balance in place, staying under torque control" },
   { name: "ready", mode: "stiffen", label: "Stiffen", cls: "",
     hint: "locks the joints and straightens the legs — the step before balancing" },
-  { name: "damp", mode: "collapse", label: "Collapse", cls: "warn", danger: "red",
+  { name: "damp", mode: "collapse", label: "Collapse", cls: "bad", danger: "red",
     warn: "All joints go limp immediately. If the robot is standing or balancing, <b>IT WILL FALL</b>. Only confirm if it is seated, crouched, or on a gantry. For a moving emergency use E-STOP." },
-  { name: "zerotorque", mode: "limp", label: "Zero Torque", cls: "warn", danger: "red",
+  { name: "zerotorque", mode: "limp", label: "Zero Torque", cls: "bad", danger: "red",
     warn: "Motor torque cuts out instantly — an even harder collapse than <b>Collapse</b>. If the robot is standing, <b>IT WILL FALL</b>. Only confirm if it is seated, crouched, or on a gantry." },
   { name: "squat", mode: "squat", label: "Squat", cls: "" },
   { name: "sit",   mode: "sit",   label: "Sit",   cls: "" },
@@ -477,11 +497,12 @@ const COMMANDS = [
   { name: "waveturn",  label: "Wave + Turn", cls: "", requires: BALANCING_MODES },
   { name: "shakehand", label: "Shake",       cls: "", requires: BALANCING_MODES },
 ]
-// Gait applies to "Walk (basic)" only — how it carries itself once balancing.
+// Gait applies to "Walk (basic)" — how it steps once balancing. The SDK's third
+// value (balance mode 0, "static") is deliberately not here: it is the very same
+// call as the Stand button, and offering it twice under two names was confusing.
 const GAITS = [
-  { value: "static", label: "hold still", hint: "balance in place, no stepping" },
-  { value: "walk",   label: "walk",       hint: "normal walking gait" },
-  { value: "run",    label: "run",        hint: "faster, longer strides" },
+  { value: "walk", label: "walk", hint: "normal walking gait" },
+  { value: "run",  label: "run",  hint: "faster, longer strides" },
 ]
 // FSM id → mode key, built from MODES so the two can't drift apart.
 const FSM_TO_MODE = {}
@@ -635,7 +656,6 @@ function runCommand(cmd) {
   const fire = () => {
     const payload = { name: cmd.name }
     if (cmd.gait && gaitSelect) payload.gait = gaitSelect.value
-    if (cmd.mode) lastCommandedMode = cmd.mode
     dimApp.send("cmd", payload)
     toast(cmd.seq ? cmd.label + " — engaging…" : cmd.label)
   }
@@ -865,18 +885,24 @@ function onG1(msg) {
 }
 
 // ── loco controller status (polled by the helper at 1 Hz) ──
-// The FSM id is the robot's own answer to "what mode am I in", so it drives the
-// badge and the button gating. BalanceStand has no id of its own — if we last
-// commanded it and the robot reports a balancing FSM, keep calling it "stand".
-let lastCommandedMode = null
+// Both numbers come from the robot itself: the FSM id says which controller is
+// running, the balance mode says whether it steps (1/2) or holds still (0).
+// "stand" is a balancing controller with balance mode 0 — it has no FSM id of
+// its own, so it can only be read this way.
+const BALANCE_WALK = 1, BALANCE_RUN = 2
+function resolveMode(fsm, balance) {
+  const fromFsm = FSM_TO_MODE[fsm]
+  const balancing = fromFsm === "walk" || fromFsm === "walk_basic"
+  if (balancing && balance === 0) return "stand"
+  return fromFsm || null
+}
 function renderLoco(msg) {
   if (typeof msg.fsm === "number") {
-    const mode = FSM_TO_MODE[msg.fsm]
+    const resolved = resolveMode(msg.fsm, msg.balance)
     els.vLoco.textContent = msg.fsm < 0 ? "unreachable"
-      : (mode ? `${MODES[mode].label} (${msg.fsm})` : msg.fsm)
-    const resolved = (lastCommandedMode === "stand" && mode === "walk_basic") ? "stand" : mode
+      : (resolved ? `${MODES[resolved].label} (${msg.fsm})` : msg.fsm)
     if (resolved !== currentMode) {
-      currentMode = resolved || null
+      currentMode = resolved
       refreshCommandStates()
     }
     if (!msg.seqRunning) {
@@ -884,6 +910,10 @@ function renderLoco(msg) {
       els.mode.title = currentMode ? MODES[currentMode].blurb : "the robot's controller state is unknown"
       els.mode.className = "mode " + (DRIVING_MODES.includes(currentMode) ? "walking"
         : (currentMode === "collapse" || currentMode === "limp") ? "damp" : "")
+    }
+    // Keep the gait picker showing what the robot is actually doing.
+    if (gaitSelect && (msg.balance === BALANCE_WALK || msg.balance === BALANCE_RUN)) {
+      gaitSelect.value = msg.balance === BALANCE_RUN ? "run" : "walk"
     }
   }
   if (typeof msg.motionMode === "string") els.vMotion.textContent = msg.motionMode

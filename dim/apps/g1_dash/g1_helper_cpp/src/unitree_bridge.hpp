@@ -71,6 +71,7 @@ private:
     bool set_gait(const std::string& gait);
     void press_combo(uint16_t keys, double seconds);
     int query_fsm_id();
+    int query_balance_mode();
     std::string query_motion_mode();
     void emit_seq(const std::string& step, const std::string& state);
     bool aborted() const { return sequence_abort_.load() || !running_.load(); }
