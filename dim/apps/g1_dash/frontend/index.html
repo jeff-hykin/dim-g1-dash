@@ -482,13 +482,15 @@ const COMMANDS = [
     warn: "All joints go limp immediately. If the robot is standing or balancing, <b>IT WILL FALL</b>. Only confirm if it is seated, crouched, or on a gantry. For a moving emergency use E-STOP." },
   { name: "wavehand",  label: "Wave",  cls: "", requires: BALANCING_MODES },
   { name: "shakehand", label: "Shake", cls: "", requires: BALANCING_MODES },
-  { name: "squat", mode: "squat", label: "Squat", cls: "",
-    hint: "slowly crouches on its own legs; balance control is off in this posture" },
+  { name: "squat", mode: "squat", label: "Squat", cls: "", danger: "amber",
+    confirmTitle: "balance control turns off",
+    warn: "The robot slowly crouches onto its own legs and <b>balance control turns off</b> — it will not catch itself afterwards. It needs clear floor space and should not be leaning or off-balance when you confirm.<br><br>Unlike <b>Sit (Chair)</b> it supports itself, so no chair is needed." },
   // Sit is Unitree's shutdown posture: balance control is off and the robot
   // expects to come down onto something, so the label carries the requirement
   // and it gets the same confirm as the other let-go commands.
   { name: "sit", mode: "sit", label: "Sit (Chair)", cls: "", danger: "amber",
-    warn: "The robot lowers into a seated position with <b>no balance control</b> — it expects a chair or support underneath. With nothing there it will simply come down on the floor. This is the posture Unitree uses for shutdown." },
+    confirmTitle: "put a chair behind the robot",
+    warn: "Sitting turns <b>balance control off</b>: the robot lowers backwards expecting a chair or support underneath it. <b>With nothing there it comes down on the floor.</b><br><br>Check that a chair is in place behind the robot before confirming. This is the posture Unitree uses for shutdown." },
 
   // ── advanced ──
   { name: "zerotorque", mode: "limp", label: "Zero Torque", cls: "bad", danger: "red", advanced: true,
@@ -627,7 +629,11 @@ let confirmAction = null
 function askConfirm(cmd, onConfirm) {
   confirmAction = onConfirm
   confirmEls.overlay.className = "confirm show " + cmd.danger
-  confirmEls.title.textContent = cmd.danger === "red" ? cmd.label + " — robot will drop" : cmd.label + " — robot will self-balance"
+  // Per-command headline where the generic one would be wrong or would bury the
+  // actual precondition (Sit needs a chair; it does not self-balance).
+  confirmEls.title.textContent = cmd.confirmTitle ? `${cmd.label} — ${cmd.confirmTitle}`
+    : cmd.danger === "red" ? `${cmd.label} — robot will drop`
+    : `${cmd.label} — robot will self-balance`
   confirmEls.text.innerHTML = cmd.warn
   confirmEls.go.textContent = cmd.label + " now"
   // Keyboard path: focus starts on Cancel so a stray Enter (e.g. a double-tap
