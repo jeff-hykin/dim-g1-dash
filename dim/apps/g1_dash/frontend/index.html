@@ -175,12 +175,11 @@
   /* the mode the robot is currently in */
   .act.active-mode { background-color: color-mix(in oklch, var(--primary) 26%, transparent);
     border-color: var(--primary); color: #fff; }
-  /* advanced commands stay collapsed until the Advanced toggle is on */
+  /* advanced commands stay collapsed until the Advanced toggle is on — with no
+     exception for the robot's current mode, which the top-bar badge reports */
   .dock:not(.show-adv) .act.adv { display: none; }
   .act.adv-toggle { color: var(--muted-fg); font-weight: 500; }
   .act.adv-toggle:hover { color: #fff; }
-  /* an advanced command the robot is currently in stays visible as a reminder */
-  .dock:not(.show-adv) .act.adv.active-mode { display: inline-flex; }
 
   /* ── drive pad (bottom right) ──
      Laid out like the keys themselves: Q W E over A S D, so the on-screen pad
