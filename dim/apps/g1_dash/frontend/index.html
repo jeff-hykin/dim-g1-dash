@@ -11,7 +11,7 @@
 
     keyboard:  W/S forward·back   A/D turn   Q/E strafe   Shift boost   Space E-STOP   / action search
 
-  Modes (walk, walk_basic, stand, stiffen, squat, sit, collapse, limp) name what
+  Modes (walk, primitive_walk, stand, stiffen, squat, sit, collapse, limp) name what
   the robot is doing; the current one comes from the loco FSM id, and actions
   that need a specific mode grey out with a tooltip saying which ones work.
 -->
@@ -175,6 +175,12 @@
   /* the mode the robot is currently in */
   .act.active-mode { background-color: color-mix(in oklch, var(--primary) 26%, transparent);
     border-color: var(--primary); color: #fff; }
+  /* advanced commands stay collapsed until the Advanced toggle is on */
+  .dock:not(.show-adv) .act.adv { display: none; }
+  .act.adv-toggle { color: var(--muted-fg); font-weight: 500; }
+  .act.adv-toggle:hover { color: #fff; }
+  /* an advanced command the robot is currently in stays visible as a reminder */
+  .dock:not(.show-adv) .act.adv.active-mode { display: inline-flex; }
 
   /* ── drive pad (bottom right) ──
      Laid out like the keys themselves: Q W E over A S D, so the on-screen pad
@@ -432,12 +438,12 @@ const SEND_HZ = 15      // move-command rate while driving
 const MODES = {
   walk:       { label: "walk",       fsms: [801, 802],
                 blurb: "advanced controller — natural walking, accepts drive commands" },
-  walk_basic: { label: "walk_basic", fsms: [200],
-                blurb: "basic controller — stompier walking, accepts drive commands" },
+  primitive_walk: { label: "primitive_walk", fsms: [200],
+                blurb: "primitive controller — stompier walking, accepts drive commands" },
   // Not an FSM of its own: it's a balancing controller with balance mode 0, so
   // the robot holds still instead of stepping. Resolved from the balance mode.
   stand:      { label: "stand",      fsms: [],
-                blurb: "balancing but holding still — Walk/Walk (basic) to step again" },
+                blurb: "balancing but holding still — Walk to step again" },
   stiffen:    { label: "stiffen",    fsms: [4],
                 blurb: "joints locked and legs straight, not balancing yet" },
   // Squat and sit are both "no balance control" postures (the remote's L1+Down
@@ -453,60 +459,60 @@ const MODES = {
                 blurb: "zero torque — motors fully off" },
 }
 // Modes that hold the robot up under torque control: everything a gesture or a
-// drive command needs. BalanceStand reports no distinct FSM id of its own, so
-// "stand" is tracked by what we last commanded rather than by id.
-const BALANCING_MODES = ["walk", "walk_basic", "stand"]
-const DRIVING_MODES = ["walk", "walk_basic"]
+// drive command needs.
+const BALANCING_MODES = ["walk", "primitive_walk", "stand"]
+const DRIVING_MODES = ["walk", "primitive_walk"]
 
-// Command buttons. `mode` = this command puts the robot INTO that mode (the
-// button reads as the mode name); `requires` = modes the robot must already be
-// in, else the button greys out and its tooltip says which modes work.
-// "walk" and "walk_basic" are multi-step engage sequences (the g1_stand port):
-// ai motion service → damp → get-ready → then either the held R2+A combo that
-// enters the advanced controller, or FSM 200 + a gait.
+// Command buttons, in dock order. The dock shows the everyday set; anything
+// with `advanced: true` is hidden behind the Advanced toggle — the primitive
+// controller, the two let-go-completely commands, and the rarely-used posture
+// tweaks. The palette always lists everything.
+//
+// `mode` = this command puts the robot INTO that mode; `requires` = modes the
+// robot must already be in, else the button greys out and says which work.
+// `gait` = the balance mode to ask for (primitive controller only).
 // Safety tiers: `danger: "red"` = the robot goes limp and FALLS if standing;
-// `danger: "amber"` = it takes torque control and self-balances. Both raise the
-// confirm modal. Gait switching and stiffen are not dangerous.
+// `danger: "amber"` = it takes torque control, or lets go in a controlled way.
 const COMMANDS = [
-  { name: "stand", mode: "walk", label: "Walk", cls: "good", seq: true, danger: "amber",
-    warn: "The robot will straighten its legs and take torque control to self-balance, then walk on command. Make sure the G1 is on a gantry or on flat ground with clear space around it." },
-  { name: "balance", mode: "walk_basic", label: "Walk (basic)", cls: "good", seq: true, gait: true, danger: "amber",
-    warn: "The robot will straighten its legs and self-balance under the basic controller, which walks with a stompier gait than <b>Walk</b>. Make sure the G1 is on a gantry or on flat ground with clear space around it." },
-  // Same call as balance mode 0 — it stops the robot stepping while it keeps
-  // balancing, so it only applies once a walking controller is already up (and
-  // isn't dangerous: the robot is holding itself up either way).
-  { name: "balancestand", mode: "stand", label: "Stand", cls: "good",
-    requires: ["walk", "walk_basic", "stand"],
-    hint: "stop stepping and balance in place, staying under torque control" },
   { name: "ready", mode: "stiffen", label: "Stiffen", cls: "",
     hint: "locks the joints and straightens the legs — the step before balancing" },
+  { name: "stand", mode: "walk", label: "Walk", cls: "good", seq: true, danger: "amber",
+    warn: "The robot will straighten its legs and take torque control to self-balance, then walk on command. Make sure the G1 is on a gantry or on flat ground with clear space around it." },
   { name: "damp", mode: "collapse", label: "Collapse", cls: "bad", danger: "red",
     warn: "All joints go limp immediately. If the robot is standing or balancing, <b>IT WILL FALL</b>. Only confirm if it is seated, crouched, or on a gantry. For a moving emergency use E-STOP." },
-  { name: "zerotorque", mode: "limp", label: "Zero Torque", cls: "bad", danger: "red",
-    warn: "Motor torque cuts out instantly — an even harder collapse than <b>Collapse</b>. If the robot is standing, <b>IT WILL FALL</b>. Only confirm if it is seated, crouched, or on a gantry." },
+  { name: "wavehand",  label: "Wave",  cls: "", requires: BALANCING_MODES },
+  { name: "shakehand", label: "Shake", cls: "", requires: BALANCING_MODES },
   { name: "squat", mode: "squat", label: "Squat", cls: "",
     hint: "slowly crouches on its own legs; balance control is off in this posture" },
-  // Sit is the shutdown posture: balance control is off and the robot expects
-  // to come down onto something. Without a chair under it that's a drop, so it
-  // gets the same confirm as the other let-go commands.
-  { name: "sit", mode: "sit", label: "Sit", cls: "", danger: "amber",
+  // Sit is Unitree's shutdown posture: balance control is off and the robot
+  // expects to come down onto something, so the label carries the requirement
+  // and it gets the same confirm as the other let-go commands.
+  { name: "sit", mode: "sit", label: "Sit (Chair)", cls: "", danger: "amber",
     warn: "The robot lowers into a seated position with <b>no balance control</b> — it expects a chair or support underneath. With nothing there it will simply come down on the floor. This is the posture Unitree uses for shutdown." },
-  { name: "highstand", label: "High Stand", cls: "", requires: BALANCING_MODES,
+
+  // ── advanced ──
+  { name: "zerotorque", mode: "limp", label: "Zero Torque", cls: "bad", danger: "red", advanced: true,
+    warn: "Motor torque cuts out instantly — an even harder collapse than <b>Collapse</b>. If the robot is standing, <b>IT WILL FALL</b>. Only confirm if it is seated, crouched, or on a gantry." },
+  // Balance mode 0: stops the robot stepping while it keeps balancing, so it
+  // only applies once a walking controller is up (and isn't dangerous — the
+  // robot is holding itself up either way).
+  { name: "balancestand", mode: "stand", label: "Stand", cls: "", advanced: true,
+    requires: BALANCING_MODES,
+    hint: "stop stepping and balance in place, staying under torque control" },
+  // The primitive controller (FSM 200) — the fallback for when the advanced one
+  // won't engage. Its two balance modes are separate buttons rather than a
+  // toggle, so nothing has to be set before pressing one.
+  { name: "balance", mode: "primitive_walk", gait: "walk", label: "Primitive Walk (slow)",
+    cls: "", seq: true, danger: "amber", advanced: true,
+    warn: "Engages the <b>primitive</b> walking controller, which balances and walks with a stompier, less refined gait than <b>Walk</b>. The robot takes torque control — make sure it is on a gantry or on flat ground with clear space around it." },
+  { name: "balance", mode: "primitive_walk", gait: "run", label: "Primitive Walk (fast)",
+    cls: "", seq: true, danger: "amber", advanced: true,
+    warn: "Same as <b>Primitive Walk (slow)</b> but with longer, faster strides. The robot takes torque control — make sure it is on a gantry or on flat ground with clear space around it." },
+  { name: "waveturn",  label: "Wave + Turn", cls: "", advanced: true, requires: BALANCING_MODES },
+  { name: "highstand", label: "High Stand",  cls: "", advanced: true, requires: BALANCING_MODES,
     hint: "raises the standing height" },
-  { name: "lowstand",  label: "Low Stand",  cls: "", requires: BALANCING_MODES,
+  { name: "lowstand",  label: "Low Stand",   cls: "", advanced: true, requires: BALANCING_MODES,
     hint: "lowers the standing height" },
-  { name: "wavehand",  label: "Wave",        cls: "", requires: BALANCING_MODES },
-  { name: "waveturn",  label: "Wave + Turn", cls: "", requires: BALANCING_MODES },
-  { name: "shakehand", label: "Shake",       cls: "", requires: BALANCING_MODES },
-]
-// How hard "Walk (basic)" steps. Called "pace" rather than "gait: walk/run" so
-// it can't be confused with the walk MODE — they're different axes. The wire
-// values stay walk/run (the helper maps them to balance modes 1 and 2); the
-// SDK's third value, balance mode 0, is deliberately absent: it is the very
-// same call as the Stand button.
-const PACES = [
-  { value: "walk", label: "normal", hint: "normal walking pace" },
-  { value: "run",  label: "fast",   hint: "faster, longer strides" },
 ]
 // FSM id → mode key, built from MODES so the two can't drift apart.
 const FSM_TO_MODE = {}
@@ -651,27 +657,6 @@ function commandTitle(cmd) {
 }
 
 // ── command dock ──
-let paceButton = null
-let currentPace = PACES[0].value
-function renderPaceButton() {
-  if (!paceButton) return
-  const pace = PACES.find(p => p.value === currentPace)
-  paceButton.textContent = "pace: " + pace.label
-  paceButton.disabled = currentMode !== "walk_basic"
-  paceButton.title = paceButton.disabled
-    ? `pace — needs mode: walk_basic${currentMode ? ` — robot is in ${MODES[currentMode].label}` : ""}`
-    : `${pace.hint} — click for ${PACES[(PACES.indexOf(pace) + 1) % PACES.length].label}`
-}
-// Apply the chosen pace. Only meaningful while walk_basic is running; at any
-// other time it's just remembered for the next engage.
-function setPace(value) {
-  currentPace = value
-  renderPaceButton()
-  const paceCommand = COMMANDS.find(cmd => cmd.gait)
-  if (currentMode === "walk_basic") {
-    runCommand({ ...paceCommand, seq: false, danger: null, label: "Pace" })
-  }
-}
 const commandButtons = new Map()
 function runCommand(cmd) {
   if (!helperReady) return toast("Helper not connected yet")
@@ -679,7 +664,7 @@ function runCommand(cmd) {
   if (blocked) return toast(`${cmd.label} ${blocked}`)
   const fire = () => {
     const payload = { name: cmd.name }
-    if (cmd.gait) payload.gait = currentPace
+    if (cmd.gait) payload.gait = cmd.gait
     dimApp.send("cmd", payload)
     toast(cmd.seq ? cmd.label + " — engaging…" : cmd.label)
   }
@@ -693,7 +678,6 @@ function refreshCommandStates() {
     button.title = commandTitle(cmd)
     button.classList.toggle("active-mode", !!cmd.mode && cmd.mode === currentMode)
   }
-  renderPaceButton()
   const drivable = !currentMode || DRIVING_MODES.includes(currentMode)
   for (const button of document.querySelectorAll(".db[data-drive]")) {
     button.classList.toggle("blocked", !drivable)
@@ -701,25 +685,36 @@ function refreshCommandStates() {
       : `driving needs mode: ${modeNames(DRIVING_MODES)} — robot is in ${MODES[currentMode].label}`
   }
 }
-for (const cmd of COMMANDS) {
+// Everyday commands first, then the Advanced toggle, then the advanced ones
+// (hidden until the toggle is on, via .dock:not(.show-adv)).
+function buildCommandButton(cmd) {
   const button = document.createElement("button")
-  button.className = "act " + cmd.cls
+  button.className = "act " + cmd.cls + (cmd.advanced ? " adv" : "")
   button.textContent = cmd.label
   button.title = commandTitle(cmd)
   button.onclick = () => runCommand(cmd)
   commandButtons.set(cmd, button)
   els.dock.appendChild(button)
-  // Pace is a plain toggle button, not a <select>: with two values a dropdown
-  // adds nothing, and a native select can't be made to match these buttons.
-  if (cmd.gait) {
-    paceButton = document.createElement("button")
-    paceButton.className = "act"
-    paceButton.onclick = () =>
-      setPace(PACES[(PACES.findIndex(p => p.value === currentPace) + 1) % PACES.length].value)
-    els.dock.appendChild(paceButton)
-    renderPaceButton()
-  }
 }
+for (const cmd of COMMANDS.filter(cmd => !cmd.advanced)) buildCommandButton(cmd)
+
+const advancedToggle = document.createElement("button")
+advancedToggle.className = "act adv-toggle"
+function renderAdvancedToggle() {
+  const shown = els.dock.classList.contains("show-adv")
+  advancedToggle.textContent = shown ? "Advanced ▾" : "Advanced ▸"
+  advancedToggle.title = shown
+    ? "hide the primitive controller, zero torque and posture tweaks"
+    : "show the primitive controller, zero torque and posture tweaks"
+}
+advancedToggle.onclick = () => {
+  els.dock.classList.toggle("show-adv")
+  renderAdvancedToggle()
+}
+els.dock.appendChild(advancedToggle)
+renderAdvancedToggle()
+
+for (const cmd of COMMANDS.filter(cmd => cmd.advanced)) buildCommandButton(cmd)
 
 els.estop.onclick = () => { dimApp.send("estop", {}); toast("E-STOP — damping") }
 
@@ -907,11 +902,11 @@ function onG1(msg) {
 // running, the balance mode says whether it steps (1/2) or holds still (0).
 // "stand" is a balancing controller with balance mode 0 — it has no FSM id of
 // its own, so it can only be read this way.
-const BALANCE_WALK = 1, BALANCE_RUN = 2
+const BALANCE_HOLD_STILL = 0
 function resolveMode(fsm, balance) {
   const fromFsm = FSM_TO_MODE[fsm]
-  const balancing = fromFsm === "walk" || fromFsm === "walk_basic"
-  if (balancing && balance === 0) return "stand"
+  const balancing = fromFsm === "walk" || fromFsm === "primitive_walk"
+  if (balancing && balance === BALANCE_HOLD_STILL) return "stand"
   return fromFsm || null
 }
 function renderLoco(msg) {
@@ -929,11 +924,6 @@ function renderLoco(msg) {
       els.mode.className = "mode " + (DRIVING_MODES.includes(currentMode) ? "walking"
         : (currentMode === "collapse" || currentMode === "limp") ? "damp" : "")
     }
-    // Keep the gait picker showing what the robot is actually doing.
-    if (msg.balance === BALANCE_WALK || msg.balance === BALANCE_RUN) {
-      currentPace = msg.balance === BALANCE_RUN ? "run" : "walk"
-    }
-    renderPaceButton()
   }
   if (typeof msg.motionMode === "string") els.vMotion.textContent = msg.motionMode
 }
@@ -1130,18 +1120,17 @@ function paletteActions() {
     actions.push({
       label: cmd.mode ? `${cmd.label} → mode: ${MODES[cmd.mode].label}` : cmd.label,
       hint: blocked ? blocked
-        : cmd.seq ? "sequence" : cmd.danger === "red" ? "danger" : cmd.danger === "amber" ? "balance" : "",
+        : cmd.danger === "red" ? "danger" : cmd.advanced ? "advanced"
+        : cmd.seq ? "sequence" : cmd.danger === "amber" ? "balance" : "",
       danger: cmd.danger,
       blocked: !!blocked,
       run: () => runCommand(cmd),
     })
   }
-  for (const pace of PACES) actions.push({
-    label: `Pace (walk_basic): ${pace.label}`, hint: pace.hint,
-    run: () => {
-      setPace(pace.value)
-      toast(`Pace → ${pace.label}`)
-    },
+  actions.push({
+    label: els.dock.classList.contains("show-adv")
+      ? "Hide advanced commands" : "Show advanced commands",
+    hint: "view", run: () => advancedToggle.onclick(),
   })
   actions.push({
     label: camDesired ? "Release camera (free it for other apps)" : "Connect camera",

@@ -40,7 +40,7 @@ so it's the robot's own answer, not what we last asked for.
 | Mode | What it means |
 | --- | --- |
 | `walk` | advanced controller — natural walking, accepts drive commands |
-| `walk_basic` | basic controller — stompier walking, accepts drive commands; a **pace** toggle (normal / fast) sits next to it |
+| `primitive_walk` | primitive controller — stompier walking, accepts drive commands (advanced; slow and fast are separate buttons) |
 | `stand` | a walking controller that's holding still instead of stepping — still balancing, still under torque control |
 | `stiffen` | joints locked and legs straight, not balancing yet — the step before standing |
 | `squat` | crouched on its own legs, balance control off (the remote's `L1`+`Down`) |
@@ -50,9 +50,17 @@ so it's the robot's own answer, not what we last asked for.
 
 Actions that need a particular mode (Wave, Shake, High/Low Stand — and driving)
 grey out when the robot isn't in one, and their tooltip says which modes do
-work, e.g. *"Wave — needs mode: walk, walk_basic, stand — robot is in collapse"*.
-While the mode is still unknown nothing is greyed out: the robot's own refusal
-is authoritative, and a wrongly-disabled button is worse than a refused one.
+work, e.g. *"Wave — needs mode: walk, primitive_walk, stand — robot is in
+collapse"*. While the mode is still unknown nothing is greyed out: the robot's
+own refusal is authoritative, and a wrongly-disabled button is worse than a
+refused one.
+
+The dock carries the everyday commands — **Stiffen, Walk, Collapse, Wave,
+Shake, Squat, Sit (Chair)**. Everything else sits behind the **Advanced**
+toggle: Zero Torque, Stand, the two Primitive Walk buttons, Wave + Turn, and
+High/Low Stand. If the robot happens to be in an advanced mode, that button
+stays visible even while collapsed, so the dock always shows where the robot
+is. The `/` palette lists every command regardless, tagged `advanced`.
 
 | Camera + controls | Lidar point cloud |
 | --- | --- |
@@ -124,7 +132,7 @@ Everything in the panel is keyboard-reachable:
 | `Esc` | close the palette or a danger dialog |
 
 The palette covers everything the mouse can do — mode changes, postures,
-gestures, pace selection, camera/lidar connect & release, lidar view expand,
+gestures, advanced commands, camera/lidar connect & release, lidar view expand,
 E-STOP — so dangerous commands keep their confirmation dialog on the keyboard
 path too (a stray double-`Enter` lands on Cancel, never on confirm). Actions
 blocked by the current mode are dimmed there too, with the reason inline.
