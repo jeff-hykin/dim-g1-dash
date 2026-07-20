@@ -327,7 +327,7 @@
         <span class="s click" id="s-camera"><span class="d"></span>RS</span>
       </div>
       <div class="mode" id="mode">—</div>
-      <div class="pill" id="batt" title="battery state of charge" style="display:none">
+      <div class="pill" id="batt" title="battery charge, and estimated time until 5% reserve" style="display:none">
         <span class="d"></span><span id="batt-t">—%</span>
       </div>
       <div class="spacer"></div>
@@ -823,6 +823,55 @@ function useRobotStream() {
   updateCamPlaceholder(`Connecting to ${remoteCamUrl}…`)
 }
 
+// ── battery runtime estimate ──
+// The BMS reports whole-percent SOC only, so rate comes from timing the drops
+// rather than differentiating a noisy value. Each 1% step gives one sample; a
+// median over the recent ones ignores the odd long/short step and the pauses
+// while the robot sits idle. Countdown targets BATTERY_RESERVE, not 0 — the
+// robot needs to be walked somewhere and shut down while it still can.
+const BATTERY_RESERVE = 5   // % — treat as empty
+const BATTERY_WARN = 30     // % — pill turns amber
+const BATTERY_STEP_SAMPLES = 8
+const BATTERY_MIN_SAMPLES = 3
+// Sanity window for one 1% step. Anything outside it means we weren't watching
+// continuously (panel closed, helper restarted) rather than a real rate.
+const BATTERY_STEP_MIN_MS = 5_000
+const BATTERY_STEP_MAX_MS = 30 * 60_000
+
+let lastSoc = null
+let lastSocAt = 0
+const socStepDurations = []
+
+function batteryRemaining(soc) {
+  const now = Date.now()
+  if (lastSoc === null) { lastSoc = soc; lastSocAt = now; return null }
+  if (soc !== lastSoc) {
+    const elapsed = now - lastSocAt
+    const dropped = lastSoc - soc
+    // Learn only from a clean single-percent discharge step. A multi-percent
+    // jump means samples were missed, and dividing through it would report a
+    // wildly fast drain; charging invalidates the model outright.
+    if (dropped === 1 && elapsed >= BATTERY_STEP_MIN_MS && elapsed <= BATTERY_STEP_MAX_MS) {
+      socStepDurations.push(elapsed)
+      while (socStepDurations.length > BATTERY_STEP_SAMPLES) socStepDurations.shift()
+    } else if (dropped < 0) {
+      socStepDurations.length = 0
+    }
+    lastSoc = soc
+    lastSocAt = now
+  }
+  if (socStepDurations.length < BATTERY_MIN_SAMPLES) return null
+  if (soc <= BATTERY_RESERVE) return "reserve"
+
+  const sorted = [...socStepDurations].sort((a, b) => a - b)
+  const medianStep = sorted[Math.floor(sorted.length / 2)]
+  const minutes = Math.round((soc - BATTERY_RESERVE) * medianStep / 60_000)
+  if (minutes < 1) return "<1 min"
+  if (minutes < 60) return `${minutes} min`
+  const hours = Math.floor(minutes / 60)
+  return `${hours}h ${minutes % 60}m`
+}
+
 // ── telemetry rendering ──
 function renderState(s) {
   if (!s) return
@@ -843,8 +892,10 @@ function renderState(s) {
   // battery (soc -1 until the first BMS message arrives)
   if (typeof s.soc === "number" && s.soc >= 0) {
     els.batt.style.display = ""
-    els.battT.textContent = s.soc + "%"
-    els.batt.className = "pill " + (s.soc <= 15 ? "err" : s.soc <= 30 ? "warn" : "ok")
+    const remaining = batteryRemaining(s.soc)
+    els.battT.textContent = s.soc + "%" + (remaining ? " - " + remaining : "")
+    els.batt.className = "pill " + (s.soc <= BATTERY_RESERVE ? "err"
+      : s.soc <= BATTERY_WARN ? "warn" : "ok")
   }
 
   // health
