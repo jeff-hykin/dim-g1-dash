@@ -1122,12 +1122,12 @@ function paletteOpen() { return paletteEls.overlay.classList.contains("show") }
 
 function paletteActions() {
   const actions = []
-  // The palette follows the dock's Advanced toggle, so there's one switch for
-  // both. An advanced command the robot is currently in stays listed, matching
-  // the dock — otherwise the mode you're in would be missing from the menu.
+  // The palette follows the dock's Advanced toggle, and hides advanced commands
+  // strictly — no exception for the robot's current mode, which the top-bar
+  // badge already reports. "Hidden" should mean hidden.
   const showAdvanced = els.dock.classList.contains("show-adv")
   for (const cmd of COMMANDS) {
-    if (cmd.advanced && !showAdvanced && cmd.mode !== currentMode) continue
+    if (cmd.advanced && !showAdvanced) continue
     const blocked = blockedReason(cmd)
     actions.push({
       label: cmd.mode ? `${cmd.label} → mode: ${MODES[cmd.mode].label}` : cmd.label,

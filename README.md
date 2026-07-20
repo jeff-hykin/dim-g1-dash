@@ -59,9 +59,9 @@ The dock carries the everyday commands — **Stiffen, Walk, Collapse, Wave,
 Shake, Squat, Sit (Chair)**. Everything else sits behind the **Advanced**
 toggle: Zero Torque, Stand, the two Primitive Walk buttons, Wave + Turn, and
 High/Low Stand. The `/` palette follows the same toggle, so one switch governs
-both (and the palette can flip it, staying open when you do). If the robot
-happens to be in an advanced mode, that command stays listed in both places
-even while collapsed — otherwise the mode you're actually in would be missing.
+both (and the palette can flip it, staying open when you do). The dock keeps an
+advanced button visible while the robot is in that mode; the palette does not —
+the top-bar badge already reports the mode.
 
 | Camera + controls | Lidar point cloud |
 | --- | --- |
