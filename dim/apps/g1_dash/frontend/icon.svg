@@ -1,7 +1,7 @@
-<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="#45e0ff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
   <!-- humanoid robot: antenna, head with LED eyes, shoulder line -->
   <path d="M12 3.6 V5.1"/>
-  <circle cx="12" cy="2.9" r="0.55" fill="currentColor" stroke="none"/>
+  <circle cx="12" cy="2.9" r="0.55" fill="#45e0ff" stroke="none"/>
   <rect x="6.8" y="5.1" width="10.4" height="8.2" rx="2.9"/>
   <path d="M9.9 8.5 v1.4"/>
   <path d="M14.1 8.5 v1.4"/>
