@@ -155,8 +155,6 @@
     mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent); }
   .dock::-webkit-scrollbar { height: 6px; }
   .dock::-webkit-scrollbar-thumb { background: color-mix(in oklch, white 22%, transparent); border-radius: 3px; }
-  /* background-color (not the `background` shorthand) so select.act's chevron
-     background-image survives hover / disabled / active-mode states */
   .act { appearance: none; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; letter-spacing: .03em;
     white-space: nowrap; flex: 0 0 auto; color: #fff; background-color: color-mix(in oklch, black 44%, transparent);
     backdrop-filter: blur(4px); border: 1px solid color-mix(in oklch, white 16%, transparent);
@@ -177,13 +175,6 @@
   /* the mode the robot is currently in */
   .act.active-mode { background-color: color-mix(in oklch, var(--primary) 26%, transparent);
     border-color: var(--primary); color: #fff; }
-  /* appearance:none drops the native arrow, so draw one and leave room for it.
-     min-width is not optional: browsers size a select from its option text
-     without allowing for these paddings, so the label truncates to "w…". */
-  select.act { padding: 9px 28px 9px 12px; min-width: 124px; text-overflow: ellipsis;
-    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' fill='none' stroke='%23ffffff' stroke-opacity='.65' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'><path d='M1 1.6 6 6.4 11 1.6'/></svg>");
-    background-repeat: no-repeat; background-position: right 10px center; background-size: 10px 7px; }
-  select.act option { background: #0c1017; color: #fff; }
 
   /* ── drive pad (bottom right) ──
      Laid out like the keys themselves: Q W E over A S D, so the on-screen pad
@@ -648,7 +639,27 @@ function commandTitle(cmd) {
 }
 
 // ── command dock ──
-let gaitSelect = null
+let gaitButton = null
+let currentGait = GAITS[0].value
+function renderGaitButton() {
+  if (!gaitButton) return
+  const gait = GAITS.find(g => g.value === currentGait)
+  gaitButton.textContent = "gait: " + gait.label
+  gaitButton.disabled = currentMode !== "walk_basic"
+  gaitButton.title = gaitButton.disabled
+    ? `gait — needs mode: walk_basic${currentMode ? ` — robot is in ${MODES[currentMode].label}` : ""}`
+    : `${gait.hint} — click for ${GAITS[(GAITS.indexOf(gait) + 1) % GAITS.length].label}`
+}
+// Apply the chosen gait. Only meaningful while walk_basic is running; at any
+// other time it's just remembered for the next engage.
+function setGait(value) {
+  currentGait = value
+  renderGaitButton()
+  const gaitCommand = COMMANDS.find(cmd => cmd.gait)
+  if (currentMode === "walk_basic") {
+    runCommand({ ...gaitCommand, seq: false, danger: null, label: "Gait" })
+  }
+}
 const commandButtons = new Map()
 function runCommand(cmd) {
   if (!helperReady) return toast("Helper not connected yet")
@@ -656,7 +667,7 @@ function runCommand(cmd) {
   if (blocked) return toast(`${cmd.label} ${blocked}`)
   const fire = () => {
     const payload = { name: cmd.name }
-    if (cmd.gait && gaitSelect) payload.gait = gaitSelect.value
+    if (cmd.gait) payload.gait = currentGait
     dimApp.send("cmd", payload)
     toast(cmd.seq ? cmd.label + " — engaging…" : cmd.label)
   }
@@ -670,12 +681,7 @@ function refreshCommandStates() {
     button.title = commandTitle(cmd)
     button.classList.toggle("active-mode", !!cmd.mode && cmd.mode === currentMode)
   }
-  if (gaitSelect) {
-    gaitSelect.disabled = currentMode !== "walk_basic"
-    gaitSelect.title = gaitSelect.disabled
-      ? `gait — needs mode: walk_basic${currentMode ? ` — robot is in ${MODES[currentMode].label}` : ""}`
-      : "how the robot steps in mode: walk_basic"
-  }
+  renderGaitButton()
   const drivable = !currentMode || DRIVING_MODES.includes(currentMode)
   for (const button of document.querySelectorAll(".db[data-drive]")) {
     button.classList.toggle("blocked", !drivable)
@@ -691,23 +697,15 @@ for (const cmd of COMMANDS) {
   button.onclick = () => runCommand(cmd)
   commandButtons.set(cmd, button)
   els.dock.appendChild(button)
+  // Gait is a plain toggle button, not a <select>: with two values a dropdown
+  // adds nothing, and a native select can't be made to match these buttons.
   if (cmd.gait) {
-    gaitSelect = document.createElement("select")
-    gaitSelect.className = "act"
-    gaitSelect.title = "how the robot carries itself in mode: walk_basic"
-    // Prefixed so the bare dropdown says what it is — it sits between two mode
-    // buttons with no room for a separate label.
-    for (const gait of GAITS) {
-      const option = document.createElement("option")
-      option.value = gait.value
-      option.textContent = "gait: " + gait.label
-      option.title = gait.hint
-      gaitSelect.appendChild(option)
-    }
-    gaitSelect.onchange = () => {
-      if (currentMode === "walk_basic") runCommand({ ...cmd, seq: false, danger: null, label: "Gait" })
-    }
-    els.dock.appendChild(gaitSelect)
+    gaitButton = document.createElement("button")
+    gaitButton.className = "act"
+    gaitButton.onclick = () =>
+      setGait(GAITS[(GAITS.findIndex(g => g.value === currentGait) + 1) % GAITS.length].value)
+    els.dock.appendChild(gaitButton)
+    renderGaitButton()
   }
 }
 
@@ -920,9 +918,10 @@ function renderLoco(msg) {
         : (currentMode === "collapse" || currentMode === "limp") ? "damp" : "")
     }
     // Keep the gait picker showing what the robot is actually doing.
-    if (gaitSelect && (msg.balance === BALANCE_WALK || msg.balance === BALANCE_RUN)) {
-      gaitSelect.value = msg.balance === BALANCE_RUN ? "run" : "walk"
+    if (msg.balance === BALANCE_WALK || msg.balance === BALANCE_RUN) {
+      currentGait = msg.balance === BALANCE_RUN ? "run" : "walk"
     }
+    renderGaitButton()
   }
   if (typeof msg.motionMode === "string") els.vMotion.textContent = msg.motionMode
 }
@@ -1128,7 +1127,7 @@ function paletteActions() {
   for (const gait of GAITS) actions.push({
     label: `Gait (walk_basic): ${gait.label}`, hint: gait.hint,
     run: () => {
-      if (gaitSelect) { gaitSelect.value = gait.value; gaitSelect.onchange() }
+      setGait(gait.value)
       toast(`Gait → ${gait.label}`)
     },
   })
