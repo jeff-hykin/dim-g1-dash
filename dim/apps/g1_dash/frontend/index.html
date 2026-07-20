@@ -175,11 +175,6 @@
   /* the mode the robot is currently in */
   .act.active-mode { background-color: color-mix(in oklch, var(--primary) 26%, transparent);
     border-color: var(--primary); color: #fff; }
-  /* advanced commands stay collapsed until the Advanced toggle is on — with no
-     exception for the robot's current mode, which the top-bar badge reports */
-  .dock:not(.show-adv) .act.adv { display: none; }
-  .act.adv-toggle { color: var(--muted-fg); font-weight: 500; }
-  .act.adv-toggle:hover { color: #fff; }
 
   /* ── drive pad (bottom right) ──
      Laid out like the keys themselves: Q W E over A S D, so the on-screen pad
@@ -691,36 +686,17 @@ function refreshCommandStates() {
       : `driving needs mode: ${modeNames(DRIVING_MODES)} — robot is in ${MODES[currentMode].label}`
   }
 }
-// Everyday commands first, then the Advanced toggle, then the advanced ones
-// (hidden until the toggle is on, via .dock:not(.show-adv)).
-function buildCommandButton(cmd) {
+// The dock carries the everyday commands only. Advanced ones live exclusively
+// in the "/" palette — no toggle here to clutter the strip.
+for (const cmd of COMMANDS.filter(cmd => !cmd.advanced)) {
   const button = document.createElement("button")
-  button.className = "act " + cmd.cls + (cmd.advanced ? " adv" : "")
+  button.className = "act " + cmd.cls
   button.textContent = cmd.label
   button.title = commandTitle(cmd)
   button.onclick = () => runCommand(cmd)
   commandButtons.set(cmd, button)
   els.dock.appendChild(button)
 }
-for (const cmd of COMMANDS.filter(cmd => !cmd.advanced)) buildCommandButton(cmd)
-
-const advancedToggle = document.createElement("button")
-advancedToggle.className = "act adv-toggle"
-function renderAdvancedToggle() {
-  const shown = els.dock.classList.contains("show-adv")
-  advancedToggle.textContent = shown ? "Advanced ▾" : "Advanced ▸"
-  advancedToggle.title = shown
-    ? "hide the primitive controller, zero torque and posture tweaks"
-    : "show the primitive controller, zero torque and posture tweaks"
-}
-advancedToggle.onclick = () => {
-  els.dock.classList.toggle("show-adv")
-  renderAdvancedToggle()
-}
-els.dock.appendChild(advancedToggle)
-renderAdvancedToggle()
-
-for (const cmd of COMMANDS.filter(cmd => cmd.advanced)) buildCommandButton(cmd)
 
 els.estop.onclick = () => { dimApp.send("estop", {}); toast("E-STOP — damping") }
 
@@ -1121,12 +1097,9 @@ function paletteOpen() { return paletteEls.overlay.classList.contains("show") }
 
 function paletteActions() {
   const actions = []
-  // The palette follows the dock's Advanced toggle, and hides advanced commands
-  // strictly — no exception for the robot's current mode, which the top-bar
-  // badge already reports. "Hidden" should mean hidden.
-  const showAdvanced = els.dock.classList.contains("show-adv")
+  // Everything lives here, including the advanced commands the dock omits —
+  // the palette IS how you reach those.
   for (const cmd of COMMANDS) {
-    if (cmd.advanced && !showAdvanced) continue
     const blocked = blockedReason(cmd)
     actions.push({
       label: cmd.mode ? `${cmd.label} → mode: ${MODES[cmd.mode].label}` : cmd.label,
@@ -1138,10 +1111,6 @@ function paletteActions() {
       run: () => runCommand(cmd),
     })
   }
-  actions.push({
-    label: showAdvanced ? "Hide advanced commands" : "Show advanced commands",
-    hint: "view", keepOpen: true, run: () => advancedToggle.onclick(),
-  })
   actions.push({
     label: camDesired ? "Release camera (free it for other apps)" : "Connect camera",
     hint: "device", run: toggleCamera,
@@ -1211,13 +1180,6 @@ function closePalette() {
 function firePalette(i) {
   const action = paletteMatches[i]
   if (!action) return
-  // Revealing the advanced commands keeps the palette open — you asked for
-  // them because you want to run one.
-  if (action.keepOpen) {
-    action.run()
-    renderPalette()
-    return
-  }
   closePalette()
   action.run()
 }
