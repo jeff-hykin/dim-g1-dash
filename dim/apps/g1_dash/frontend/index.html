@@ -111,8 +111,15 @@
   .card { background: color-mix(in oklch, #0c1017 74%, transparent); backdrop-filter: blur(7px);
     border: 1px solid color-mix(in oklch, white 12%, transparent); border-radius: calc(var(--radius) * 1.3);
     padding: 12px 13px; box-shadow: 0 12px 34px -18px rgba(0,0,0,.7); }
+  /* headers are the collapse control for their card */
   .card h3 { margin: 0 0 9px; font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
-    color: var(--muted-fg); }
+    color: var(--muted-fg); cursor: pointer; user-select: none; display: flex; align-items: center; gap: 6px; }
+  .card h3:hover { color: #fff; }
+  .card h3::before { content: "▾"; font-size: 8px; opacity: .7; }
+  .card.collapsed h3::before { content: "▸"; }
+  .card.collapsed h3 { margin-bottom: 0; }
+  /* hide everything but the header (the lidar head holds its own header) */
+  .card.collapsed > *:not(h3):not(.lidar-head) { display: none; }
 
   .kv { display: grid; grid-template-columns: 1fr auto; gap: 3px 8px; font-size: 12px; }
   .kv .k { color: var(--muted-fg); }
@@ -136,11 +143,16 @@
   .lidar-card { flex: 0 0 210px; padding: 0; overflow: hidden; }
   /* expanded: grows right over the camera; the rail scrolls in what's left */
   .lidar-card.big { flex: 0 0 min(64vh, 560px); width: min(60vw, 720px); }
+  /* collapsed: just the header strip, canvas gone */
+  .lidar-card.collapsed, .lidar-card.big.collapsed { flex: 0 0 auto; width: 260px; }
+  .lidar-card.collapsed .lidar-head { position: static; background: none; }
+  .lidar-card.collapsed canvas { display: none; }
   .lidar-card canvas { display: block; width: 100% !important; height: 100% !important; }
   .lidar-head { position: absolute; top: 0; left: 0; right: 0; z-index: 2; display: flex; align-items: center;
     gap: 8px; padding: 8px 10px; pointer-events: none;
     background: linear-gradient(to bottom, rgba(4,8,14,.8), transparent); }
-  .lidar-head h3 { margin: 0; }
+  /* the head is click-through except for its controls (the h3 collapses) */
+  .lidar-head h3 { margin: 0; pointer-events: auto; }
   .lidar-head .m { font-family: var(--mono); font-size: 10.5px; color: var(--muted-fg); }
   .lidar-head .expand { pointer-events: auto; margin-left: auto; appearance: none; cursor: pointer; font: inherit;
     font-size: 11px; color: rgba(255,255,255,.8); background: color-mix(in oklch, black 40%, transparent);
@@ -330,8 +342,6 @@
           <span class="k">controller</span><span class="v" id="v-loco">—</span>
           <span class="k">motion svc</span><span class="v" id="v-motion">—</span>
           <span class="k">FSM machine</span><span class="v" id="v-fsm">—</span>
-          <span class="k">PR mode</span><span class="v" id="v-pr">—</span>
-          <span class="k">motors</span><span class="v" id="v-motors">—</span>
         </div>
       </div>
 
@@ -351,7 +361,6 @@
       <div class="card">
         <h3>Health</h3>
         <div class="kv">
-          <span class="k">battery</span><span class="v" id="v-batt">—</span>
           <span class="k">hottest joint</span><span class="v" id="v-temp">—</span>
           <span class="k">nearest obst.</span><span class="v" id="v-near">—</span>
           <span class="k">lidar pts/s</span><span class="v" id="v-pts">—</span>
@@ -527,14 +536,12 @@ const els = {
   mode: document.getElementById("mode"),
   estop: document.getElementById("estop"),
   vLoco: document.getElementById("v-loco"), vMotion: document.getElementById("v-motion"),
-  vFsm: document.getElementById("v-fsm"), vPr: document.getElementById("v-pr"),
-  vMotors: document.getElementById("v-motors"),
+  vFsm: document.getElementById("v-fsm"),
   horizonSky: document.getElementById("horizon-sky"), horizonYaw: document.getElementById("horizon-yaw"),
   vRoll: document.getElementById("v-roll"), vPitch: document.getElementById("v-pitch"),
   vTemp: document.getElementById("v-temp"), vNear: document.getElementById("v-near"),
   vPts: document.getElementById("v-pts"),
   batt: document.getElementById("batt"), battT: document.getElementById("batt-t"),
-  vBatt: document.getElementById("v-batt"),
   lidarCard: document.getElementById("lidar-card"), lidarExpand: document.getElementById("lidar-expand"),
   lidarConn: document.getElementById("lidar-conn"),
   lidarM: document.getElementById("lidar-m"), lidarCanvas: document.getElementById("lidar-canvas"),
@@ -821,8 +828,6 @@ function renderState(s) {
   if (!s) return
   // robot / FSM
   if (typeof s.fsmMachine === "number") els.vFsm.textContent = s.fsmMachine
-  if (typeof s.fsmPr === "number") els.vPr.textContent = s.fsmPr
-  if (typeof s.motorCount === "number") els.vMotors.textContent = s.motorCount
 
   // attitude
   if (Array.isArray(s.rpy)) {
@@ -840,8 +845,6 @@ function renderState(s) {
     els.batt.style.display = ""
     els.battT.textContent = s.soc + "%"
     els.batt.className = "pill " + (s.soc <= 15 ? "err" : s.soc <= 30 ? "warn" : "ok")
-    els.vBatt.textContent = s.soc + "%"
-    els.vBatt.className = "v" + (s.soc <= 15 ? " hot" : "")
   }
 
   // health
@@ -1049,11 +1052,21 @@ function updateDriveState() {
 }
 
 const KEY_MAP = { KeyW: "fwd", KeyS: "back", KeyA: "tl", KeyD: "tr", KeyQ: "sl", KeyE: "sr" }
+// Escape is handled in the CAPTURE phase on window so it fires before anything
+// else can swallow it — the dashboard shell around this panel also listens for
+// Escape, and in the bubble phase it can win the race.
 addEventListener("keydown", (e) => {
-  // palette open: its own input handles keys (and stops propagation); this
-  // guard catches the case where the input lost focus while still visible
-  if (paletteOpen()) { if (e.code === "Escape") closePalette(); return }
-  if (e.code === "Escape") { closeConfirm(); return }
+  if (e.code !== "Escape") return
+  if (!paletteOpen() && !confirmAction) return
+  e.preventDefault()
+  e.stopImmediatePropagation()
+  if (paletteOpen()) closePalette()
+  else closeConfirm()
+}, true)
+
+addEventListener("keydown", (e) => {
+  // palette open: its own input handles the rest of the keys
+  if (paletteOpen()) return
   if (e.code === "Space") { e.preventDefault(); dimApp.send("estop", {}); toast("E-STOP — damping"); return }
   if (confirmAction) return // modal open — don't drive underneath it
   if (e.code === "Slash") { e.preventDefault(); openPalette(); return }
@@ -1177,6 +1190,11 @@ function closePalette() {
   paletteEls.overlay.classList.remove("show")
   paletteEls.input.blur()
 }
+// Clicking anywhere outside the palette closes it too — a second way out that
+// doesn't depend on the key event reaching us.
+addEventListener("pointerdown", (e) => {
+  if (paletteOpen() && !paletteEls.overlay.contains(e.target)) closePalette()
+}, true)
 function firePalette(i) {
   const action = paletteMatches[i]
   if (!action) return
@@ -1186,11 +1204,29 @@ function firePalette(i) {
 paletteEls.input.addEventListener("input", () => { paletteIndex = 0; renderPalette() })
 paletteEls.input.addEventListener("keydown", (e) => {
   e.stopPropagation() // typed W/A/Space must not drive or E-STOP the robot
-  if (e.code === "Escape") { closePalette(); return }
   if (e.code === "ArrowDown") { e.preventDefault(); paletteIndex++; renderPalette(); return }
   if (e.code === "ArrowUp") { e.preventDefault(); paletteIndex = Math.max(0, paletteIndex - 1); renderPalette(); return }
   if (e.code === "Enter") { e.preventDefault(); firePalette(paletteIndex) }
 })
+
+// ── collapsible cards ──
+// Clicking a card's header folds it away; the choice sticks across reloads,
+// keyed by header text so it survives markup changes.
+const COLLAPSED_KEY = "g1CollapsedCards"
+const collapsedCards = new Set(JSON.parse(localStorage.getItem(COLLAPSED_KEY) || "[]"))
+for (const heading of document.querySelectorAll(".card h3")) {
+  const card = heading.closest(".card")
+  const key = heading.textContent.trim()
+  if (collapsedCards.has(key)) card.classList.add("collapsed")
+  heading.title = "click to collapse / expand"
+  heading.onclick = () => {
+    const collapsed = card.classList.toggle("collapsed")
+    if (collapsed) collapsedCards.add(key)
+    else collapsedCards.delete(key)
+    localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsedCards]))
+    if (card.classList.contains("lidar-card")) requestAnimationFrame(resizeLidar)
+  }
+}
 
 // ── boot ──
 initLidar()
