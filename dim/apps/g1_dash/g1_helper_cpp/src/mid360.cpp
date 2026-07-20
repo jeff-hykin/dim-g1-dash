@@ -39,37 +39,10 @@ constexpr float kCmToMeters = 0.01f;
 
 constexpr auto kInitRetryDelay = std::chrono::seconds(10);
 constexpr auto kManagePoll = std::chrono::milliseconds(200);
-// Stock MID360 address on a Unitree G1 (the robot LAN is 192.168.123.0/24).
-constexpr char kDefaultLidarIp[] = "192.168.123.120";
 
 std::string env_or(const char* key, const char* fallback) {
     const char* value = std::getenv(key);
     return value && *value ? std::string(value) : std::string(fallback);
-}
-
-// The host IP the lidar should stream to: the local address that shares the
-// lidar's /24. Beats a hardcoded default that breaks on robots with a
-// different LAN plan.
-std::string detect_host_ip(const std::string& lidar_ip) {
-    const auto last_dot = lidar_ip.rfind('.');
-    if (last_dot == std::string::npos) return "";
-    const std::string subnet_prefix = lidar_ip.substr(0, last_dot + 1);
-
-    ifaddrs* interfaces = nullptr;
-    if (getifaddrs(&interfaces) != 0) return "";
-    std::string found;
-    for (ifaddrs* entry = interfaces; entry; entry = entry->ifa_next) {
-        if (!entry->ifa_addr || entry->ifa_addr->sa_family != AF_INET) continue;
-        char address[INET_ADDRSTRLEN] = {};
-        const auto* ipv4 = reinterpret_cast<const sockaddr_in*>(entry->ifa_addr);
-        inet_ntop(AF_INET, &ipv4->sin_addr, address, sizeof(address));
-        if (std::strncmp(address, subnet_prefix.c_str(), subnet_prefix.size()) == 0) {
-            found = address;
-            break;
-        }
-    }
-    freeifaddrs(interfaces);
-    return found;
 }
 
 Mid360* g_instance = nullptr;  // Livox callbacks are C function pointers, no user ptr on init.
@@ -102,6 +75,50 @@ void point_cloud_callback(uint32_t /*handle*/, const uint8_t /*dev_type*/,
 }
 
 }  // namespace
+
+namespace {
+
+// Find the (address, interface) pair on the lidar's /24.
+void find_on_robot_lan(const std::string& lidar_ip, std::string& address_out,
+                       std::string& interface_out) {
+    address_out.clear();
+    interface_out.clear();
+    const auto last_dot = lidar_ip.rfind('.');
+    if (last_dot == std::string::npos) return;
+    const std::string subnet_prefix = lidar_ip.substr(0, last_dot + 1);
+
+    ifaddrs* interfaces = nullptr;
+    if (getifaddrs(&interfaces) != 0) return;
+    for (ifaddrs* entry = interfaces; entry; entry = entry->ifa_next) {
+        if (!entry->ifa_addr || entry->ifa_addr->sa_family != AF_INET) continue;
+        char address[INET_ADDRSTRLEN] = {};
+        const auto* ipv4 = reinterpret_cast<const sockaddr_in*>(entry->ifa_addr);
+        inet_ntop(AF_INET, &ipv4->sin_addr, address, sizeof(address));
+        if (std::strncmp(address, subnet_prefix.c_str(), subnet_prefix.size()) == 0) {
+            address_out = address;
+            if (entry->ifa_name) interface_out = entry->ifa_name;
+            break;
+        }
+    }
+    freeifaddrs(interfaces);
+}
+
+}  // namespace
+
+// The host IP the lidar should stream to: the local address that shares the
+// lidar's /24. Beats a hardcoded default that breaks on robots with a
+// different LAN plan.
+std::string detect_host_ip(const std::string& lidar_ip) {
+    std::string address, interface_name;
+    find_on_robot_lan(lidar_ip, address, interface_name);
+    return address;
+}
+
+std::string detect_robot_interface(const std::string& lidar_ip) {
+    std::string address, interface_name;
+    find_on_robot_lan(lidar_ip, address, interface_name);
+    return interface_name;
+}
 
 Mid360::Mid360(Protocol& protocol) : protocol_(protocol) {}
 

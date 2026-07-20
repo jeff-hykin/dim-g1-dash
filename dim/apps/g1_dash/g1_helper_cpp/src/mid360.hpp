@@ -36,6 +36,18 @@
 
 namespace g1 {
 
+// Stock MID360 address on a Unitree G1 (the robot LAN is 192.168.123.0/24).
+inline constexpr char kDefaultLidarIp[] = "192.168.123.120";
+
+// The local address sharing `lidar_ip`'s /24, or "" if this machine has no
+// interface on that subnet. Doubles as the are-we-on-the-robot-LAN probe.
+std::string detect_host_ip(const std::string& lidar_ip);
+
+// Name of the interface holding that address ("" if none) — the right one to
+// bind DDS to: eth0 on the Jetson itself, but anything on a laptop plugged
+// into the robot LAN.
+std::string detect_robot_interface(const std::string& lidar_ip);
+
 class Mid360 {
 public:
     explicit Mid360(Protocol& protocol);

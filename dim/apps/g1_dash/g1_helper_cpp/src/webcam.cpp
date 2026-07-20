@@ -136,10 +136,15 @@ void Webcam::set_enabled(bool enabled) { desired_.store(enabled); }
 
 // Find a V4L2 node that can actually stream YUYV or MJPG video. On the G1 that
 // is the RealSense color node (its depth/IR/metadata siblings expose Z16/GREY
-// or no capture formats at all).
+// or no capture formats at all). Auto-pick only considers devices whose card
+// name matches G1_CAM_MATCH (default "RealSense") — without it, running the
+// dash on a laptop would stream the laptop's own webcam as "the G1 camera".
+// G1_CAM_DEVICE forces a specific node; G1_CAM_MATCH="" allows any camera.
 std::string Webcam::pick_device() {
     const std::string forced = env_or("G1_CAM_DEVICE", "");
     if (!forced.empty()) return forced;
+    const char* match_env = std::getenv("G1_CAM_MATCH");
+    const std::string card_match = match_env ? match_env : "RealSense";
     for (int index = 0; index <= kMaxDeviceIndex; ++index) {
         const std::string path = "/dev/video" + std::to_string(index);
         const int fd = open(path.c_str(), O_RDWR | O_NONBLOCK);
@@ -147,7 +152,9 @@ std::string Webcam::pick_device() {
         v4l2_capability capability{};
         if (xioctl(fd, VIDIOC_QUERYCAP, &capability) == 0 &&
             (capability.device_caps & V4L2_CAP_VIDEO_CAPTURE) &&
-            (capability.device_caps & V4L2_CAP_STREAMING)) {
+            (capability.device_caps & V4L2_CAP_STREAMING) &&
+            (card_match.empty() ||
+             std::strstr(reinterpret_cast<const char*>(capability.card), card_match.c_str()))) {
             for (uint32_t format_index = 0;; ++format_index) {
                 v4l2_fmtdesc format{};
                 format.index = format_index;

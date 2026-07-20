@@ -9,6 +9,7 @@
 #include <unitree/robot/channel/channel_publisher.hpp>
 #include <unitree/robot/channel/channel_subscriber.hpp>
 #include <unitree/robot/g1/loco/g1_loco_client.hpp>
+#include <unitree/idl/hg/BmsState_.hpp>
 #include <unitree/idl/hg/LowState_.hpp>
 
 namespace g1 {
@@ -16,13 +17,16 @@ namespace g1 {
 namespace {
 
 using LowStateMsg = unitree_hg::msg::dds_::LowState_;
+using BmsStateMsg = unitree_hg::msg::dds_::BmsState_;
 using WirelessMsg = unitree_go::msg::dds_::WirelessController_;
 using LocoClient = unitree::robot::g1::LocoClient;
 using MotionSwitcherClient = unitree::robot::b2::MotionSwitcherClient;
 using LowStateSubscriber = unitree::robot::ChannelSubscriber<LowStateMsg>;
+using BmsSubscriber = unitree::robot::ChannelSubscriber<BmsStateMsg>;
 using WirelessPublisher = unitree::robot::ChannelPublisher<WirelessMsg>;
 
 constexpr char kLowStateTopic[] = "rt/lowstate";
+constexpr char kBmsTopic[] = "rt/lf/bmsstate";
 constexpr char kWirelessTopic[] = "rt/wirelesscontroller";
 constexpr float kLocoTimeoutSec = 10.0f;
 constexpr float kSwitcherTimeoutSec = 10.0f;
@@ -87,6 +91,13 @@ bool UnitreeBridge::start() {
         [this](const void* message) { on_low_state(message); }, 1);
     low_state_subscriber_ = subscriber;
 
+    auto* bms = new BmsSubscriber(kBmsTopic);
+    bms->InitChannel(
+        [this](const void* message) {
+            battery_soc_.store(static_cast<const BmsStateMsg*>(message)->soc());
+        }, 1);
+    bms_subscriber_ = bms;
+
     auto* client = new LocoClient();
     client->Init();
     client->SetTimeout(kLocoTimeoutSec);
@@ -134,6 +145,10 @@ void UnitreeBridge::stop() {
     if (low_state_subscriber_) {
         delete static_cast<LowStateSubscriber*>(low_state_subscriber_);
         low_state_subscriber_ = nullptr;
+    }
+    if (bms_subscriber_) {
+        delete static_cast<BmsSubscriber*>(bms_subscriber_);
+        bms_subscriber_ = nullptr;
     }
     connected_.store(false);
 }
@@ -466,11 +481,11 @@ void UnitreeBridge::on_low_state(const void* message) {
     std::string mode;
     { std::lock_guard<std::mutex> guard(mode_mutex_); mode = mode_; }
 
-    // Note: the G1 hg LowState_ carries no battery/BMS field, so telemetry is
-    // IMU + joint heat + FSM state. (A battery gauge would need a separate BMS
-    // topic that isn't part of rt/lowstate.)
+    // Battery soc rides along from the separate rt/lf/bmsstate subscription —
+    // the hg LowState_ itself carries no BMS field.
     protocol_.emit({
         {"type", "state"},
+        {"soc", battery_soc_.load()},
         {"rpy", {rpy[0], rpy[1], rpy[2]}},
         {"gyro", {imu.gyroscope()[0], imu.gyroscope()[1], imu.gyroscope()[2]}},
         {"accel", {imu.accelerometer()[0], imu.accelerometer()[1], imu.accelerometer()[2]}},

@@ -84,6 +84,7 @@ private:
     void* motion_switcher_ = nullptr;
     void* wireless_publisher_ = nullptr;
     void* low_state_subscriber_ = nullptr;
+    void* bms_subscriber_ = nullptr;
 
     // The loco/motion-switcher RPC clients are shared by the control, status and
     // sequence threads; serialize every Call through this.
@@ -110,6 +111,9 @@ private:
 
     // Throttle for {"type":"state"} emission off the DDS callback.
     std::chrono::steady_clock::time_point last_state_emit_{};
+
+    // Battery state of charge (%) from rt/lf/bmsstate; -1 until the first message.
+    std::atomic<int> battery_soc_{-1};
 };
 
 }  // namespace g1

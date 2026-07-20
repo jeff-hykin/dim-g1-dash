@@ -43,12 +43,18 @@ hand-managed hashes. `nlohmann_json` and `libjpeg_turbo` come from nixpkgs.
 
 | Var | Default | Meaning |
 | --- | --- | --- |
-| `G1_NET_IFACE` | `eth0` | Interface the unitree DDS transport binds to |
+| `G1_NET_IFACE` | auto | Interface for unitree DDS (auto: the one on the robot LAN, else `eth0`) |
 | `G1_LIDAR_IP` | `192.168.123.120` | MID360's IP (G1 stock address) |
-| `G1_LIDAR_HOST_IP` | auto | Jetson IP on the lidar subnet (auto: local IP sharing the lidar's /24) |
-| `G1_CAM_DEVICE` | auto | V4L2 node to stream (else first YUYV/MJPG-capable one) |
+| `G1_LIDAR_HOST_IP` | auto | Local IP on the lidar subnet (auto: the one sharing the lidar's /24) |
+| `G1_CAM_DEVICE` | auto | V4L2 node to stream (else first matching YUYV/MJPG-capable one) |
+| `G1_CAM_MATCH` | `RealSense` | Auto-pick only cameras whose name contains this (`""` = any camera) |
 | `G1_CAM_PORT` | `8190` | Port for the MJPEG HTTP stream |
 | `G1_CAM_WIDTH` × `G1_CAM_HEIGHT` | `848`×`480` | Capture size — keep 16:9 for the full FOV (4:3 center-crops) |
+
+The startup status event reports `onboard` (an interface on the robot LAN
+exists) and `remote` (on the robot LAN but not a Jetson — e.g. a laptop plugged
+into the robot). Off-LAN, the panel shows setup guidance instead of dead
+widgets; remote, everything except the local camera works.
 
 **Exclusive devices — nothing is claimed by default.** Both the MID360 and the
 camera are exclusive-access, so the helper starts with both released and only
@@ -91,8 +97,9 @@ One-shots are refused while a sequence is running — E-STOP aborts it. The SDK
 reports refusals as nonzero return codes; the helper surfaces them as `error`
 events (e.g. `command 'wavehand' refused by the robot (code=7303)`).
 
-**Telemetry (stdout):** `ready`, `status` (subsystem up/down, `camWanted` /
-`lidarWanted` claim state, `camPort` for the MJPEG stream), `state` (IMU
+**Telemetry (stdout):** `ready`, `status` (subsystem up/down, `onboard` /
+`remote` machine detection, `camWanted` / `lidarWanted` claim state, `camPort`
+for the MJPEG stream), `state` (battery `soc` from `rt/lf/bmsstate`, IMU
 rpy/gyro/accel, hottest joint, FSM machine), `loco` (1 Hz: loco FSM id, resident
 motion service, mode label), `seq` (engage-sequence step progress), `lidar`
 (flat `[x,y,z,…]` cloud accumulated over the last ~4 s + nearest range; the

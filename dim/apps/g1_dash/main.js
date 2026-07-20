@@ -28,6 +28,9 @@ let helperReady = false
 // blank until the next event arrives.
 let lastStatus = null
 let lastState = null
+// Why the helper can't come up (e.g. no nix on this machine) — shown by the
+// panel instead of an eternal "waiting for the onboard helper".
+let backendNote = null
 
 // Find the `nix` binary. A GUI-launched dashboard may not inherit the shell PATH
 // that has nix on it, so fall back to the usual install locations.
@@ -59,18 +62,22 @@ function sendToHelper(obj) {
 }
 
 function pushStatus() {
-    dimApp.send("g1", { type: "status", ready: helperReady, status: lastStatus, state: lastState })
+    dimApp.send("g1", { type: "status", ready: helperReady, status: lastStatus, state: lastState, note: backendNote })
 }
 
 async function start() {
     const nix = await resolveNixBin()
     if (!nix) {
         helperReady = false
+        backendNote = "`nix` was not found on this machine, so the onboard C++ helper can't be built. " +
+            "G1 Dash is meant to run on the G1's own Jetson — install the dim dashboard there and " +
+            "`dim install` this app on the robot. (Or install nix here if this really is the robot.)"
         pushStatus()
         console.error("g1_dash: `nix` not found on PATH — cannot build the G1 helper")
         setTimeout(start, RESTART_MS)
         return
     }
+    backendNote = null
     try {
         // `nix run` builds the helper on first launch (cached thereafter), then
         // execs it with stdio forwarded. The first build compiles the robot SDKs

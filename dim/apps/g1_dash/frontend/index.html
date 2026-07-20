@@ -30,6 +30,13 @@
     justify-content: center; gap: 12px; color: var(--muted-fg); font-size: 13px; text-align: center; padding: 24px; }
   .cam-wrap.live .cam-ph { display: none; }
   .cam-ph .glyph { font-size: 46px; opacity: .4; }
+  /* multi-line explainer (off-robot / no-nix guidance) */
+  .cam-ph .note-block { max-width: 560px; text-align: left; line-height: 1.6; font-size: 13px;
+    color: rgba(255,255,255,.85); }
+  .cam-ph .note-block b { color: #fff; }
+  .cam-ph .note-block p { margin: 0 0 10px; }
+  .cam-ph .note-block code { font-family: var(--mono); font-size: 12px;
+    background: rgba(255,255,255,.09); border-radius: 4px; padding: 1px 5px; }
 
   /* subtle vignette so overlays stay readable over a bright frame */
   .vignette { position: absolute; inset: 0; pointer-events: none; z-index: 1;
@@ -198,6 +205,7 @@
   .confirm-actions button { appearance: none; cursor: pointer; font: inherit; font-weight: 800;
     font-size: 13px; letter-spacing: .06em; text-transform: uppercase; border-radius: var(--radius);
     padding: 12px 22px; border: 1px solid color-mix(in oklch, white 28%, transparent); color: #fff; }
+  .confirm-actions button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
   #confirm-cancel { background: color-mix(in oklch, black 40%, transparent); }
   #confirm-cancel:hover { background: color-mix(in oklch, black 20%, transparent); }
   #confirm-go:active { transform: translateY(1px); }
@@ -243,6 +251,8 @@
   .palette-item.red-danger .hint { color: #ff5b4d; }
   .palette-item.amber-danger .hint { color: #ffc14d; }
   .palette-empty { padding: 10px 12px; font-size: 12px; color: var(--muted-fg); }
+  .palette-foot { padding: 7px 12px; font-size: 10px; letter-spacing: .03em; color: var(--muted-fg);
+    border-top: 1px solid color-mix(in oklch, white 10%, transparent); font-family: var(--mono); }
 </style>
 </head>
 <body>
@@ -275,6 +285,9 @@
         <span class="s click" id="s-camera"><span class="d"></span>RS</span>
       </div>
       <div class="mode" id="mode">—</div>
+      <div class="pill" id="batt" title="battery state of charge" style="display:none">
+        <span class="d"></span><span id="batt-t">—%</span>
+      </div>
       <div class="spacer"></div>
       <button class="estop" id="estop" title="Zero velocity + Damp (Space)">E-STOP</button>
     </div>
@@ -307,6 +320,7 @@
       <div class="card">
         <h3>Health</h3>
         <div class="kv">
+          <span class="k">battery</span><span class="v" id="v-batt">—</span>
           <span class="k">hottest joint</span><span class="v" id="v-temp">—</span>
           <span class="k">nearest obst.</span><span class="v" id="v-near">—</span>
           <span class="k">lidar pts/s</span><span class="v" id="v-pts">—</span>
@@ -347,6 +361,7 @@
       <input id="palette-input" type="text" placeholder="Search actions… (↑↓ select · Enter run · Esc close)"
              autocomplete="off" spellcheck="false" />
       <div class="palette-list" id="palette-list"></div>
+      <div class="palette-foot">drive: W/S fwd·back &nbsp;A/D turn &nbsp;Q/E strafe &nbsp;Shift boost &nbsp;·&nbsp; Space E-STOP</div>
     </div>
 
     <div class="confirm" id="confirm">
@@ -431,6 +446,8 @@ const els = {
   vRoll: document.getElementById("v-roll"), vPitch: document.getElementById("v-pitch"),
   vTemp: document.getElementById("v-temp"), vNear: document.getElementById("v-near"),
   vPts: document.getElementById("v-pts"),
+  batt: document.getElementById("batt"), battT: document.getElementById("batt-t"),
+  vBatt: document.getElementById("v-batt"),
   lidarCard: document.getElementById("lidar-card"), lidarExpand: document.getElementById("lidar-expand"),
   lidarConn: document.getElementById("lidar-conn"),
   lidarM: document.getElementById("lidar-m"), lidarCanvas: document.getElementById("lidar-canvas"),
@@ -440,6 +457,50 @@ const els = {
 
 let helperReady = false
 let camPort = null        // MJPEG server port, reported by the helper's status event
+let onboard = null        // helper-detected: is this machine on the G1 robot LAN?
+let remoteMode = false    // on the robot LAN but not the Jetson (laptop plugged in)
+let remoteCamUrl = null   // viewing the robot's own MJPEG stream instead of a local camera
+let backendNote = null    // backend-reported blocker (e.g. nix missing on this machine)
+
+// Single writer for the center placeholder. The off-robot / no-nix explainers
+// out-rank every transient stream message — a dead camera isn't the story then.
+function updateCamPlaceholder(streamMessage) {
+  if (els.camWrap.classList.contains("live")) return
+  if (onboard === false) {
+    els.camPhText.innerHTML = `<div class="note-block">
+      <p><b>This machine doesn't look like the G1.</b> There's no network interface on the
+      robot LAN (<code>192.168.123.x</code>), so the robot, camera and lidar can't be reached.</p>
+      <p>G1 Dash runs <b>onboard the robot</b>: SSH into the G1's Jetson (usually
+      <code>ssh unitree@192.168.123.164</code> from a machine plugged into the robot),
+      install the <a href="https://github.com/jeff-hykin/dim-app" style="color:inherit">dim
+      dashboard</a> there, then run
+      <code>dim install https://github.com/jeff-hykin/dim-g1-dash</code> and open the panel
+      served from the robot.</p>
+      <p>If your robot uses a different LAN plan, set <code>G1_LIDAR_IP</code> (and
+      <code>G1_NET_IFACE</code> for DDS) in the dashboard's environment.</p>
+    </div>`
+    return
+  }
+  if (backendNote && !helperReady) {
+    els.camPhText.innerHTML = `<div class="note-block"><p><b>The onboard helper can't start.</b></p><p></p></div>`
+    els.camPhText.querySelector("p:last-child").textContent = backendNote
+    return
+  }
+  if (streamMessage) { els.camPhText.textContent = streamMessage; return }
+  if (remoteMode && helperReady && !camDesired && !remoteCamUrl) {
+    els.camPhText.innerHTML = `<div class="note-block">
+      <p><b>Remote session</b> — this machine is on the robot's LAN but isn't the robot itself.
+      Driving, telemetry and the MID360 all work from here; the RealSense is attached to the robot.</p>
+      <p>If the robot is also running G1 Dash, press <code>/</code> and run
+      <b>View robot's onboard camera stream</b>.</p>
+    </div>`
+    return
+  }
+  if (!helperReady) { els.camPhText.textContent = "Waiting for the onboard helper…"; return }
+  els.camPhText.textContent = camDesired
+    ? "Connecting to camera stream…"
+    : "Camera not connected — click the RS chip (or press / → Connect camera)"
+}
 
 // ── toast ──
 let toastTimer = null
@@ -465,6 +526,9 @@ function askConfirm(cmd, onConfirm) {
   confirmEls.title.textContent = cmd.danger === "red" ? cmd.label + " — robot will drop" : cmd.label + " — robot will self-balance"
   confirmEls.text.innerHTML = cmd.warn
   confirmEls.go.textContent = cmd.label + " now"
+  // Keyboard path: focus starts on Cancel so a stray Enter (e.g. a double-tap
+  // from the palette) backs out; Tab reaches the confirm button, Enter fires it.
+  confirmEls.cancel.focus()
 }
 function closeConfirm() { confirmEls.overlay.className = "confirm"; confirmAction = null }
 confirmEls.cancel.onclick = closeConfirm
@@ -530,14 +594,15 @@ function updateToggleLabels() {
 }
 function toggleCamera() {
   camDesired = !camDesired
+  if (camDesired) remoteCamUrl = null // local camera takes over from a robot stream
   dimApp.send("config", { camera: camDesired })
   toast(camDesired ? "Connecting camera…" : "Camera released for other apps")
   if (!camDesired) {
     els.camWrap.classList.remove("live")
     els.cam.src = ""
     clearTimeout(camRetryTimer)
-    els.camPhText.textContent = "Camera released — press / and run “Connect camera”"
   }
+  updateCamPlaceholder()
   updateToggleLabels()
 }
 function toggleLidar() {
@@ -552,6 +617,8 @@ els.lidarConn.onclick = toggleLidar
 
 function renderStatus(status) {
   if (!status) return
+  if (typeof status.onboard === "boolean") onboard = status.onboard
+  if (typeof status.remote === "boolean") { remoteMode = status.remote; renderLink() }
   if (typeof status.camWanted === "boolean") camDesired = status.camWanted
   if (typeof status.lidarWanted === "boolean") lidarDesired = status.lidarWanted
   updateToggleLabels()
@@ -559,13 +626,15 @@ function renderStatus(status) {
   setSub(els.sLidar, status.lidar)
   setSub(els.sCamera, status.camera)
   if (status.camera === true) connectCamera()
-  if (status.camera === false) {
+  if (status.camera === false && !remoteCamUrl) { // a robot stream isn't the local camera
     els.camWrap.classList.remove("live")
     els.cam.src = ""
     clearTimeout(camRetryTimer)
-    els.camPhText.textContent = camDesired
+    updateCamPlaceholder(camDesired
       ? "Camera off — device busy (Unitree's videohub owns it?) or unplugged. Retrying…"
-      : "Camera not connected — click the RS chip (or press / → Connect camera)"
+      : null)
+  } else {
+    updateCamPlaceholder()
   }
   if (typeof status.camPort === "number" && status.camPort !== camPort) {
     camPort = status.camPort
@@ -576,12 +645,8 @@ function renderLink() {
   if (!helperReady) {
     els.link.className = "pill err"; els.linkT.textContent = "Helper down"
   } else {
-    els.link.className = "pill ok"; els.linkT.textContent = "Onboard"
-    if (!els.camWrap.classList.contains("live")) {
-      els.camPhText.textContent = camDesired
-        ? "Connecting to camera stream…"
-        : "Camera not connected — click the RS chip (or press / → Connect camera)"
-    }
+    els.link.className = "pill ok"; els.linkT.textContent = remoteMode ? "Remote" : "Onboard"
+    updateCamPlaceholder()
   }
 }
 
@@ -599,10 +664,26 @@ function connectCamera() {
 els.cam.onload = () => { els.camWrap.classList.add("live") }
 els.cam.onerror = () => {
   els.camWrap.classList.remove("live")
+  if (remoteCamUrl) {
+    updateCamPlaceholder(`Robot stream unreachable (${remoteCamUrl}) — is G1 Dash running on the robot? Press / to retry.`)
+    return
+  }
   if (!camDesired) return
-  els.camPhText.textContent = "Camera stream offline — retrying… (device busy or unplugged)"
+  updateCamPlaceholder("Camera stream offline — retrying… (device busy or unplugged)")
   clearTimeout(camRetryTimer)
   camRetryTimer = setTimeout(connectCamera, 3000)
+}
+
+// Remote sessions: view the MJPEG stream served by the G1 Dash instance running
+// ON the robot instead of a local camera (there is no local RealSense off-robot).
+function useRobotStream() {
+  const saved = localStorage.getItem("g1RobotIp") || "192.168.123.164"
+  const ip = prompt("Robot IP (the Jetson running G1 Dash):", saved)
+  if (!ip) return
+  localStorage.setItem("g1RobotIp", ip)
+  remoteCamUrl = `http://${ip}:${camPort || 8190}/stream`
+  els.cam.src = `${remoteCamUrl}?t=${Date.now()}`
+  updateCamPlaceholder(`Connecting to ${remoteCamUrl}…`)
 }
 
 // ── telemetry rendering ──
@@ -622,6 +703,15 @@ function renderState(s) {
     // roll rotates the sky, pitch slides it vertically
     const pitchPx = Math.max(-40, Math.min(40, (pitch * 180 / Math.PI) * 1.4))
     els.horizonSky.style.transform = `rotate(${(-roll * 180 / Math.PI).toFixed(1)}deg) translateY(${pitchPx.toFixed(0)}px)`
+  }
+
+  // battery (soc -1 until the first BMS message arrives)
+  if (typeof s.soc === "number" && s.soc >= 0) {
+    els.batt.style.display = ""
+    els.battT.textContent = s.soc + "%"
+    els.batt.className = "pill " + (s.soc <= 15 ? "err" : s.soc <= 30 ? "warn" : "ok")
+    els.vBatt.textContent = s.soc + "%"
+    els.vBatt.className = "v" + (s.soc <= 15 ? " hot" : "")
   }
 
   // health
@@ -646,7 +736,8 @@ dimApp.receiveRequest((tag, msg) => {
 function onG1(msg) {
   switch (msg.type) {
     case "status":
-      // backend's own status wrapper: { ready, status, state }
+      // backend's own status wrapper: { ready, status, state, note }
+      if ("note" in msg) { backendNote = msg.note; updateCamPlaceholder() }
       if (typeof msg.ready === "boolean") { helperReady = msg.ready; renderLink() }
       if (msg.status) renderStatus(msg.status)
       if (msg.state) renderState(msg.state)
@@ -875,6 +966,9 @@ function paletteActions() {
   actions.push({
     label: lidarDesired ? "Release MID360 (free it for other apps)" : "Connect MID360",
     hint: "device", run: toggleLidar,
+  })
+  if (remoteMode) actions.push({
+    label: "View robot's onboard camera stream", hint: "remote", run: useRobotStream,
   })
   actions.push({
     label: els.lidarCard.classList.contains("big") ? "Shrink lidar view" : "Expand lidar view",
