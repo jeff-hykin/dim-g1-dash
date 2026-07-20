@@ -10,6 +10,10 @@
   drive commands back down over the app-bus.
 
     keyboard:  W/S forward·back   A/D turn   Q/E strafe   Shift boost   Space E-STOP   / action search
+
+  Modes (walk, walk_basic, stand, stiffen, squat, sit, collapse, limp) name what
+  the robot is doing; the current one comes from the loco FSM id, and actions
+  that need a specific mode grey out with a tooltip saying which ones work.
 -->
 <html lang="en">
 <head>
@@ -157,24 +161,33 @@
   .act:active { transform: translateY(1px); }
   .act.good { border-color: color-mix(in oklch, var(--ok) 55%, transparent); color: color-mix(in oklch, var(--ok) 70%, white); }
   .act.warn { border-color: color-mix(in oklch, #f4b740 55%, transparent); color: color-mix(in oklch, #f4b740 78%, white); }
+  /* greyed out: this command needs a mode the robot isn't in (title says which) */
+  .act:disabled { opacity: .38; cursor: not-allowed; }
+  .act:disabled:hover { background: color-mix(in oklch, black 44%, transparent); border-color: color-mix(in oklch, white 16%, transparent); }
+  /* the mode the robot is currently in */
+  .act.active-mode { background: color-mix(in oklch, var(--primary) 26%, transparent);
+    border-color: var(--primary); color: #fff; }
   select.act { padding: 8px 6px; }
   select.act option { background: #0c1017; color: #fff; }
 
-  /* ── drive d-pad (bottom right) ── */
+  /* ── drive pad (bottom right) ──
+     Laid out like the keys themselves: Q W E over A S D, so the on-screen pad
+     and the keyboard are the same shape. Releasing stops the robot, so there's
+     no stop button here — E-STOP (Space) covers emergencies. */
   .dpad { position: absolute; right: 16px; bottom: 16px; z-index: 9;
-    display: grid; grid-template-columns: repeat(3, 46px); grid-template-rows: repeat(3, 46px); gap: 6px; }
+    display: grid; grid-template-columns: repeat(3, 46px); grid-template-rows: repeat(2, 46px); gap: 6px; }
   .db { appearance: none; cursor: pointer; user-select: none; touch-action: none; font: inherit; font-size: 16px;
     color: #fff; background: color-mix(in oklch, black 50%, transparent); backdrop-filter: blur(4px);
     border: 1px solid color-mix(in oklch, white 15%, transparent); border-radius: var(--radius);
     display: flex; align-items: center; justify-content: center; }
   .db:hover { background: color-mix(in oklch, black 38%, transparent); }
   .db.held { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
-  .db.fwd { grid-area: 1 / 2 ; } .db.back { grid-area: 3 / 2; }
-  .db.tl { grid-area: 2 / 1; } .db.tr { grid-area: 2 / 3; }
-  .db.sl { grid-area: 1 / 1; } .db.sr { grid-area: 1 / 3; }
-  .db.stop { grid-area: 2 / 2; font-size: 11px; font-weight: 700; letter-spacing: .04em; }
+  /* driving needs a walking mode — dimmed, but still clickable so the toast explains */
+  .db.blocked { opacity: .35; }
+  .db.sl { grid-area: 1 / 1; } .db.fwd  { grid-area: 1 / 2; } .db.sr { grid-area: 1 / 3; }
+  .db.tl { grid-area: 2 / 1; } .db.back { grid-area: 2 / 2; } .db.tr { grid-area: 2 / 3; }
 
-  .vel { position: absolute; right: 16px; bottom: 168px; z-index: 9; font-family: var(--mono); font-size: 10.5px;
+  .vel { position: absolute; right: 16px; bottom: 116px; z-index: 9; font-family: var(--mono); font-size: 10.5px;
     color: #fff; background: color-mix(in oklch, black 52%, transparent); backdrop-filter: blur(4px);
     border: 1px solid color-mix(in oklch, white 14%, transparent); border-radius: var(--radius); padding: 6px 9px;
     min-width: 128px; }
@@ -257,6 +270,9 @@
   .palette-item.sel { background: color-mix(in oklch, var(--primary) 30%, transparent); color: #fff; }
   .palette-item.red-danger .hint { color: #ff5b4d; }
   .palette-item.amber-danger .hint { color: #ffc14d; }
+  /* blocked: needs a mode the robot isn't in — the hint says which */
+  .palette-item.blocked { opacity: .45; }
+  .palette-item.blocked .hint { text-transform: none; letter-spacing: 0; }
   .palette-empty { padding: 10px 12px; font-size: 12px; color: var(--muted-fg); }
   .palette-foot { padding: 7px 12px; font-size: 10px; letter-spacing: .03em; color: var(--muted-fg);
     border-top: 1px solid color-mix(in oklch, white 10%, transparent); font-family: var(--mono); }
@@ -355,13 +371,12 @@
     </div>
 
     <div class="dpad">
-      <button class="db tl"  data-drive="tl" title="turn left (A)">↺</button>
-      <button class="db fwd" data-drive="fwd" title="forward (W)">▲</button>
-      <button class="db tr"  data-drive="tr" title="turn right (D)">↻</button>
-      <button class="db sl"  data-drive="sl" title="strafe left (Q)">◀</button>
-      <button class="db stop" id="db-stop" title="stop">STOP</button>
-      <button class="db sr"  data-drive="sr" title="strafe right (E)">▶</button>
-      <button class="db back" data-drive="back" title="back (S)">▼</button>
+      <button class="db sl"  data-drive="sl"  data-help="strafe left (Q)"  title="strafe left (Q)">◀</button>
+      <button class="db fwd" data-drive="fwd" data-help="forward (W)"      title="forward (W)">▲</button>
+      <button class="db sr"  data-drive="sr"  data-help="strafe right (E)" title="strafe right (E)">▶</button>
+      <button class="db tl"  data-drive="tl"  data-help="turn left (A)"    title="turn left (A)">↺</button>
+      <button class="db back" data-drive="back" data-help="back (S)"       title="back (S)">▼</button>
+      <button class="db tr"  data-drive="tr"  data-help="turn right (D)"   title="turn right (D)">↻</button>
     </div>
 
     <div class="dock" id="dock"></div>
@@ -404,40 +419,73 @@ const MAX_OMEGA = 0.9   // rad/s yaw
 const BOOST = 1.6       // Shift multiplier
 const SEND_HZ = 15      // move-command rate while driving
 
-// Mode buttons — name is the helper command, class tints it. "Stand" and
-// "Basic" are multi-step engage sequences (see g1_helper's g1_stand port):
-//   Stand — ai motion service → damp → get-ready → R2+A combo → advanced
-//           controller (FSM 801/802), the one that walks naturally on cmd_vel.
-//   Basic — same start, but ends in FSM 200 with the selected gait.
-// The rest are one-shot FSM postures (refused while a sequence is running).
-// Safety tiers: `danger: "red"` = the robot goes limp and FALLS if standing
-// (damp, zero-torque); `danger: "amber"` = self-balancing, the robot straightens
-// up and takes torque control (stand, basic). Both raise the confirm modal.
-// Gait switching and stiffen/get-ready are not dangerous — no confirmation.
+// ── modes ──
+// What the robot IS doing right now, derived from the loco service's FSM id.
+// These names are the panel's vocabulary — the SDK's own labels ("basic",
+// "balance mode 0") don't say anything to someone driving the robot.
+const MODES = {
+  walk:       { label: "walk",       fsms: [801, 802],
+                blurb: "advanced controller — natural walking, accepts drive commands" },
+  walk_basic: { label: "walk_basic", fsms: [200],
+                blurb: "basic controller — stompier walking, accepts drive commands" },
+  stand:      { label: "stand",      fsms: [],
+                blurb: "balance-standing in place — no drive commands" },
+  stiffen:    { label: "stiffen",    fsms: [4],
+                blurb: "joints locked and legs straight, not balancing yet" },
+  squat:      { label: "squat",      fsms: [2], blurb: "crouched" },
+  sit:        { label: "sit",        fsms: [3], blurb: "seated" },
+  collapse:   { label: "collapse",   fsms: [1],
+                blurb: "damped — joints limp, the robot rests on whatever holds it" },
+  limp:       { label: "limp",       fsms: [0],
+                blurb: "zero torque — motors fully off" },
+}
+// Modes that hold the robot up under torque control: everything a gesture or a
+// drive command needs. BalanceStand reports no distinct FSM id of its own, so
+// "stand" is tracked by what we last commanded rather than by id.
+const BALANCING_MODES = ["walk", "walk_basic", "stand"]
+const DRIVING_MODES = ["walk", "walk_basic"]
+
+// Command buttons. `mode` = this command puts the robot INTO that mode (the
+// button reads as the mode name); `requires` = modes the robot must already be
+// in, else the button greys out and its tooltip says which modes work.
+// "walk" and "walk_basic" are multi-step engage sequences (the g1_stand port):
+// ai motion service → damp → get-ready → then either the held R2+A combo that
+// enters the advanced controller, or FSM 200 + a gait.
+// Safety tiers: `danger: "red"` = the robot goes limp and FALLS if standing;
+// `danger: "amber"` = it takes torque control and self-balances. Both raise the
+// confirm modal. Gait switching and stiffen are not dangerous.
 const COMMANDS = [
-  { name: "stand",      label: "Stand",         cls: "good", seq: true, danger: "amber",
+  { name: "stand", mode: "walk", label: "Walk", cls: "good", seq: true, danger: "amber",
     warn: "The robot will straighten its legs and take torque control to self-balance, then walk on command. Make sure the G1 is on a gantry or on flat ground with clear space around it." },
-  { name: "balance",    label: "Basic",         cls: "good", seq: true, gait: true, danger: "amber",
-    warn: "The robot will straighten its legs and self-balance under the basic FSM 200 controller. Make sure the G1 is on a gantry or on flat ground with clear space around it." },
-  { name: "damp",       label: "Damp",          cls: "warn", danger: "red",
+  { name: "balance", mode: "walk_basic", label: "Walk (basic)", cls: "good", seq: true, gait: true, danger: "amber",
+    warn: "The robot will straighten its legs and self-balance under the basic controller, which walks with a stompier gait than <b>Walk</b>. Make sure the G1 is on a gantry or on flat ground with clear space around it." },
+  { name: "balancestand", mode: "stand", label: "Stand", cls: "good", danger: "amber",
+    warn: "The robot takes torque control and balance-stands in place (it will not accept drive commands). Make sure it is upright with its feet under it — from a slump or a hang this will jerk the joints." },
+  { name: "ready", mode: "stiffen", label: "Stiffen", cls: "",
+    hint: "locks the joints and straightens the legs — the step before balancing" },
+  { name: "damp", mode: "collapse", label: "Collapse", cls: "warn", danger: "red",
     warn: "All joints go limp immediately. If the robot is standing or balancing, <b>IT WILL FALL</b>. Only confirm if it is seated, crouched, or on a gantry. For a moving emergency use E-STOP." },
-  { name: "ready",      label: "Get Ready",     cls: "" },
-  { name: "squat",      label: "Squat",         cls: "" },
-  { name: "sit",        label: "Sit",           cls: "" },
-  { name: "wavehand",   label: "Wave",          cls: "" },
-  { name: "waveturn",   label: "Wave + Turn",   cls: "" },
-  { name: "shakehand",  label: "Shake",         cls: "" },
-  { name: "highstand",  label: "High Stand",    cls: "" },
-  { name: "lowstand",   label: "Low Stand",     cls: "" },
-  { name: "balancestand", label: "Balance Stand", cls: "", danger: "amber",
-    warn: "The robot takes torque control and balance-stands. Make sure it is upright with its feet under it — from a slump or a hang this will jerk the joints." },
-  { name: "zerotorque", label: "Zero Torque",   cls: "warn", danger: "red",
-    warn: "Motor torque cuts out instantly — an even harder collapse than damp. If the robot is standing, <b>IT WILL FALL</b>. Only confirm if it is seated, crouched, or on a gantry." },
+  { name: "zerotorque", mode: "limp", label: "Zero Torque", cls: "warn", danger: "red",
+    warn: "Motor torque cuts out instantly — an even harder collapse than <b>Collapse</b>. If the robot is standing, <b>IT WILL FALL</b>. Only confirm if it is seated, crouched, or on a gantry." },
+  { name: "squat", mode: "squat", label: "Squat", cls: "" },
+  { name: "sit",   mode: "sit",   label: "Sit",   cls: "" },
+  { name: "highstand", label: "High Stand", cls: "", requires: BALANCING_MODES,
+    hint: "raises the standing height" },
+  { name: "lowstand",  label: "Low Stand",  cls: "", requires: BALANCING_MODES,
+    hint: "lowers the standing height" },
+  { name: "wavehand",  label: "Wave",        cls: "", requires: BALANCING_MODES },
+  { name: "waveturn",  label: "Wave + Turn", cls: "", requires: BALANCING_MODES },
+  { name: "shakehand", label: "Shake",       cls: "", requires: BALANCING_MODES },
 ]
-const GAITS = ["static", "walk", "run"]
-// What the loco service's FSM ids mean, for the Robot card.
-const FSM_LABELS = { 0: "zero torque", 1: "damp", 2: "squat", 3: "sit", 4: "ready",
-  200: "balance (basic)", 500: "start", 801: "advanced", 802: "advanced" }
+// Gait applies to "Walk (basic)" only — how it carries itself once balancing.
+const GAITS = [
+  { value: "static", label: "hold still", hint: "balance in place, no stepping" },
+  { value: "walk",   label: "walk",       hint: "normal walking gait" },
+  { value: "run",    label: "run",        hint: "faster, longer strides" },
+]
+// FSM id → mode key, built from MODES so the two can't drift apart.
+const FSM_TO_MODE = {}
+for (const [key, mode] of Object.entries(MODES)) for (const fsm of mode.fsms) FSM_TO_MODE[fsm] = key
 
 const els = {
   camWrap: document.getElementById("cam-wrap"),
@@ -467,6 +515,9 @@ const els = {
 }
 
 let helperReady = false
+// Current mode key, from the loco FSM id (null = not known yet — never gate on
+// an unknown mode, a wrongly-greyed button is worse than one that gets refused).
+let currentMode = null
 let camPort = null        // MJPEG server port, reported by the helper's status event
 let onboard = null        // helper-detected: is this machine on the G1 robot LAN?
 let remoteMode = false    // on the robot LAN but not the Jetson (laptop plugged in)
@@ -557,34 +608,76 @@ confirmEls.cancel.onclick = closeConfirm
 confirmEls.overlay.onclick = (e) => { if (e.target === confirmEls.overlay) closeConfirm() }
 confirmEls.go.onclick = () => { const action = confirmAction; closeConfirm(); if (action) action() }
 
+// ── mode gating ──
+// A command with `requires` only works from certain modes. While the mode is
+// unknown we allow everything — the helper reports the robot's own refusal, and
+// a wrongly-greyed button is worse than a refused one.
+function modeNames(keys) { return keys.map(key => MODES[key].label).join(", ") }
+function blockedReason(cmd) {
+  if (!cmd.requires || !currentMode) return null
+  if (cmd.requires.includes(currentMode)) return null
+  return `needs mode: ${modeNames(cmd.requires)} — robot is in ${MODES[currentMode].label}`
+}
+function commandTitle(cmd) {
+  const blocked = blockedReason(cmd)
+  if (blocked) return `${cmd.label} — ${blocked}`
+  if (cmd.mode) return `${cmd.label} → mode: ${MODES[cmd.mode].label}${MODES[cmd.mode].blurb ? " (" + MODES[cmd.mode].blurb + ")" : ""}`
+  return cmd.hint ? `${cmd.label} — ${cmd.hint}` : cmd.label
+}
+
 // ── command dock ──
 let gaitSelect = null
+const commandButtons = new Map()
 function runCommand(cmd) {
   if (!helperReady) return toast("Helper not connected yet")
+  const blocked = blockedReason(cmd)
+  if (blocked) return toast(`${cmd.label} ${blocked}`)
   const fire = () => {
     const payload = { name: cmd.name }
     if (cmd.gait && gaitSelect) payload.gait = gaitSelect.value
+    if (cmd.mode) lastCommandedMode = cmd.mode
     dimApp.send("cmd", payload)
     toast(cmd.seq ? cmd.label + " — engaging…" : cmd.label)
   }
   if (cmd.danger) askConfirm(cmd, fire)
   else fire()
 }
+function refreshCommandStates() {
+  for (const [cmd, button] of commandButtons) {
+    const blocked = blockedReason(cmd)
+    button.disabled = !!blocked
+    button.title = commandTitle(cmd)
+    button.classList.toggle("active-mode", !!cmd.mode && cmd.mode === currentMode)
+  }
+  if (gaitSelect) gaitSelect.disabled = currentMode !== "walk_basic"
+  const drivable = !currentMode || DRIVING_MODES.includes(currentMode)
+  for (const button of document.querySelectorAll(".db[data-drive]")) {
+    button.classList.toggle("blocked", !drivable)
+    button.title = drivable ? button.dataset.help
+      : `driving needs mode: ${modeNames(DRIVING_MODES)} — robot is in ${MODES[currentMode].label}`
+  }
+}
 for (const cmd of COMMANDS) {
   const button = document.createElement("button")
   button.className = "act " + cmd.cls
   button.textContent = cmd.label
+  button.title = commandTitle(cmd)
   button.onclick = () => runCommand(cmd)
+  commandButtons.set(cmd, button)
   els.dock.appendChild(button)
   if (cmd.gait) {
     gaitSelect = document.createElement("select")
     gaitSelect.className = "act"
-    gaitSelect.title = "gait for Basic (FSM 200)"
+    gaitSelect.title = "how the robot carries itself in mode: walk_basic"
     for (const gait of GAITS) {
       const option = document.createElement("option")
-      option.value = gait
-      option.textContent = gait
+      option.value = gait.value
+      option.textContent = gait.label
+      option.title = gait.hint
       gaitSelect.appendChild(option)
+    }
+    gaitSelect.onchange = () => {
+      if (currentMode === "walk_basic") runCommand({ ...cmd, seq: false, danger: null, label: "Gait" })
     }
     els.dock.appendChild(gaitSelect)
   }
@@ -742,11 +835,6 @@ function renderState(s) {
     els.vTemp.className = "v" + (s.hottestTemp > 75 ? " hot" : "")
   }
 
-  // mode badge
-  if (s.mode) {
-    els.mode.textContent = s.mode
-    els.mode.className = "mode " + (s.mode === "walking" ? "walking" : (s.mode === "damp" || s.mode === "zerotorque") ? "damp" : "")
-  }
 }
 
 // ── event bus from the backend ──
@@ -777,16 +865,28 @@ function onG1(msg) {
 }
 
 // ── loco controller status (polled by the helper at 1 Hz) ──
+// The FSM id is the robot's own answer to "what mode am I in", so it drives the
+// badge and the button gating. BalanceStand has no id of its own — if we last
+// commanded it and the robot reports a balancing FSM, keep calling it "stand".
+let lastCommandedMode = null
 function renderLoco(msg) {
   if (typeof msg.fsm === "number") {
-    const label = FSM_LABELS[msg.fsm]
-    els.vLoco.textContent = msg.fsm < 0 ? "unreachable" : (label ? `${label} (${msg.fsm})` : msg.fsm)
+    const mode = FSM_TO_MODE[msg.fsm]
+    els.vLoco.textContent = msg.fsm < 0 ? "unreachable"
+      : (mode ? `${MODES[mode].label} (${msg.fsm})` : msg.fsm)
+    const resolved = (lastCommandedMode === "stand" && mode === "walk_basic") ? "stand" : mode
+    if (resolved !== currentMode) {
+      currentMode = resolved || null
+      refreshCommandStates()
+    }
+    if (!msg.seqRunning) {
+      els.mode.textContent = currentMode ? "mode: " + MODES[currentMode].label : "mode: —"
+      els.mode.title = currentMode ? MODES[currentMode].blurb : "the robot's controller state is unknown"
+      els.mode.className = "mode " + (DRIVING_MODES.includes(currentMode) ? "walking"
+        : (currentMode === "collapse" || currentMode === "limp") ? "damp" : "")
+    }
   }
   if (typeof msg.motionMode === "string") els.vMotion.textContent = msg.motionMode
-  if (msg.mode && !msg.seqRunning) {
-    els.mode.textContent = msg.mode
-    els.mode.className = "mode " + (msg.mode === "walking" ? "walking" : (msg.mode === "damp" || msg.mode === "zerotorque") ? "damp" : "")
-  }
 }
 
 // ── engage-sequence progress (the g1_stand flow streaming step events) ──
@@ -913,9 +1013,18 @@ function stopSending() {
   if (helperReady) dimApp.send("move", zero)
   showVel(zero)
 }
+// Say once (not every keypress) why the robot isn't moving when a drive input
+// arrives in a mode that can't walk. The commands still go out — the robot's
+// own refusal is authoritative.
+let driveHintAt = 0
 function updateDriveState() {
-  if (driving()) startSending()
-  else if (sendTimer) stopSending()
+  if (driving()) {
+    if (currentMode && !DRIVING_MODES.includes(currentMode) && Date.now() - driveHintAt > 5000) {
+      driveHintAt = Date.now()
+      toast(`Driving needs mode: ${modeNames(DRIVING_MODES)} — robot is in ${MODES[currentMode].label}`)
+    }
+    startSending()
+  } else if (sendTimer) stopSending()
 }
 
 const KEY_MAP = { KeyW: "fwd", KeyS: "back", KeyA: "tl", KeyD: "tr", KeyQ: "sl", KeyE: "sr" }
@@ -941,7 +1050,7 @@ addEventListener("keyup", (e) => {
 // release everything if the panel loses focus mid-drive (safety)
 addEventListener("blur", () => { for (const k in keys) keys[k] = false; if (sendTimer) stopSending() })
 
-// on-screen d-pad: press-and-hold mirrors the keys
+// on-screen drive pad: press-and-hold mirrors the keys
 for (const btn of document.querySelectorAll(".db[data-drive]")) {
   const dir = btn.dataset.drive
   const press = (e) => { e.preventDefault(); keys[dir] = true; btn.classList.add("held"); updateDriveState() }
@@ -951,8 +1060,6 @@ for (const btn of document.querySelectorAll(".db[data-drive]")) {
   btn.addEventListener("pointerleave", release)
   btn.addEventListener("pointercancel", release)
 }
-document.getElementById("db-stop").onclick = () => { for (const k in keys) keys[k] = false
-  for (const b of document.querySelectorAll(".db.held")) b.classList.remove("held"); if (sendTimer) stopSending() }
 
 // ── "/" action search palette ──
 // Every dock/chip action, reachable by keyboard: / to open, type to filter,
@@ -970,16 +1077,22 @@ function paletteOpen() { return paletteEls.overlay.classList.contains("show") }
 function paletteActions() {
   const actions = []
   for (const cmd of COMMANDS) {
+    const blocked = blockedReason(cmd)
     actions.push({
-      label: cmd.label,
-      hint: cmd.seq ? "sequence" : cmd.danger === "red" ? "danger" : cmd.danger === "amber" ? "balance" : "",
+      label: cmd.mode ? `${cmd.label} → mode: ${MODES[cmd.mode].label}` : cmd.label,
+      hint: blocked ? blocked
+        : cmd.seq ? "sequence" : cmd.danger === "red" ? "danger" : cmd.danger === "amber" ? "balance" : "",
       danger: cmd.danger,
+      blocked: !!blocked,
       run: () => runCommand(cmd),
     })
   }
   for (const gait of GAITS) actions.push({
-    label: `Gait for Basic: ${gait}`, hint: "select",
-    run: () => { if (gaitSelect) gaitSelect.value = gait; toast(`Gait for Basic → ${gait}`) },
+    label: `Gait (walk_basic): ${gait.label}`, hint: gait.hint,
+    run: () => {
+      if (gaitSelect) { gaitSelect.value = gait.value; gaitSelect.onchange() }
+      toast(`Gait → ${gait.label}`)
+    },
   })
   actions.push({
     label: camDesired ? "Release camera (free it for other apps)" : "Connect camera",
@@ -1017,7 +1130,7 @@ function renderPalette() {
   paletteMatches.forEach((action, i) => {
     const item = document.createElement("div")
     item.className = "palette-item" + (i === paletteIndex ? " sel" : "") +
-      (action.danger ? ` ${action.danger}-danger` : "")
+      (action.danger ? ` ${action.danger}-danger` : "") + (action.blocked ? " blocked" : "")
     const label = document.createElement("span")
     label.textContent = action.label
     item.appendChild(label)

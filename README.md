@@ -20,16 +20,37 @@ talks straight to its hardware:
 - **Telemetry** — battery percentage, loco controller FSM + resident motion
   service, IMU attitude (roll/pitch/yaw with an artificial horizon), hottest
   joint temperature, and nearest-obstacle proximity.
-- **Control** — one-tap **Stand** runs the full engage sequence (the dimos
+- **Control** — one-tap **Walk** runs the full engage sequence (the dimos
   `bin/g1_stand` flow, ported to C++): switch to the "ai" motion service, damp,
   get-ready, then emulate a held R2+A on the wireless-controller topic to enter
-  the advanced balance controller (FSM 801/802) — the one that walks naturally.
-  Then drive with `W`/`S` (forward/back), `A`/`D` (turn), `Q`/`E` (strafe),
-  `Shift` to boost — or the on-screen d-pad. **Basic** engages the FSM 200
-  fallback with a selectable gait (static/walk/run); Damp, Get Ready, Sit,
-  Squat, Wave, Shake, High/Low/Balance Stand and Zero Torque are one-shots.
+  the advanced balance controller — the one that walks naturally. Then drive
+  with `W`/`S` (forward/back), `A`/`D` (turn), `Q`/`E` (strafe), `Shift` to
+  boost — or the on-screen pad, which is laid out like those same keys.
   `Space` is a hardware-style **E-STOP** (aborts sequences too), and `/` opens
   a searchable action palette — every button is keyboard-reachable.
+
+## Modes
+
+The panel names what the robot **is doing** rather than exposing the SDK's FSM
+ids, and each mode button says which mode it puts the robot into. The current
+mode is read back from the loco service (so it's the robot's own answer, not
+what we last asked for) and shown in the top bar.
+
+| Mode | What it means |
+| --- | --- |
+| `walk` | advanced controller — natural walking, accepts drive commands |
+| `walk_basic` | basic controller — stompier walking, accepts drive commands; a gait picker (hold still / walk / run) sits next to it |
+| `stand` | balance-standing in place, no drive commands |
+| `stiffen` | joints locked and legs straight, not balancing yet — the step before standing |
+| `squat` / `sit` | crouched / seated |
+| `collapse` | damped: joints limp, the robot rests on whatever holds it |
+| `limp` | zero torque, motors fully off |
+
+Actions that need a particular mode (Wave, Shake, High/Low Stand — and driving)
+grey out when the robot isn't in one, and their tooltip says which modes do
+work, e.g. *"Wave — needs mode: walk, walk_basic, stand — robot is in collapse"*.
+While the mode is still unknown nothing is greyed out: the robot's own refusal
+is authoritative, and a wrongly-disabled button is worse than a refused one.
 
 | Camera + controls | Lidar point cloud |
 | --- | --- |
@@ -100,10 +121,14 @@ Everything in the panel is keyboard-reachable:
 | `Tab` + `Enter` | in a danger dialog: focus starts on Cancel, `Tab` reaches the confirm button |
 | `Esc` | close the palette or a danger dialog |
 
-The palette covers everything the mouse can do — engage sequences, postures,
+The palette covers everything the mouse can do — mode changes, postures,
 gestures, gait selection, camera/lidar connect & release, lidar view expand,
 E-STOP — so dangerous commands keep their confirmation dialog on the keyboard
-path too (a stray double-`Enter` lands on Cancel, never on confirm).
+path too (a stray double-`Enter` lands on Cancel, never on confirm). Actions
+blocked by the current mode are dimmed there too, with the reason inline.
+
+Releasing a drive key stops the robot, so the pad has no stop button — that's
+what `Space` (E-STOP) is for.
 
 ## Using it off-robot
 
