@@ -838,14 +838,45 @@ const BATTERY_MIN_SAMPLES = 3
 const BATTERY_STEP_MIN_MS = 5_000
 const BATTERY_STEP_MAX_MS = 30 * 60_000
 
+// The learned rate outlives a reload — otherwise every refresh blanks the
+// estimate for the next few percent. Only the samples are persisted, not the
+// timing of the step in flight: the robot may have been off or charging while
+// the panel was closed, so that step is re-timed from scratch. A stale rate is
+// dropped rather than trusted after a long gap.
+const BATTERY_RATE_KEY = "g1BatteryStepMs"
+const BATTERY_RATE_MAX_AGE_MS = 12 * 60 * 60_000
+
+function loadSocSteps() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(BATTERY_RATE_KEY) || "null")
+    if (!saved || !Array.isArray(saved.samples)) return []
+    if (Date.now() - saved.savedAt > BATTERY_RATE_MAX_AGE_MS) return []
+    return saved.samples
+      .filter(ms => typeof ms === "number" && ms >= BATTERY_STEP_MIN_MS && ms <= BATTERY_STEP_MAX_MS)
+      .slice(-BATTERY_STEP_SAMPLES)
+  } catch {
+    return []  // corrupt or unavailable storage — just relearn
+  }
+}
+function saveSocSteps() {
+  try {
+    localStorage.setItem(BATTERY_RATE_KEY,
+      JSON.stringify({ samples: socStepDurations, savedAt: Date.now() }))
+  } catch { /* private mode / quota — the estimate still works in-session */ }
+}
+
 let lastSoc = null
 let lastSocAt = 0
-const socStepDurations = []
+const socStepDurations = loadSocSteps()
 
 function batteryRemaining(soc) {
   const now = Date.now()
-  if (lastSoc === null) { lastSoc = soc; lastSocAt = now; return null }
-  if (soc !== lastSoc) {
+  // First reading of the session only starts the clock — but it must still fall
+  // through to the estimate, otherwise a rate restored from storage goes unused.
+  if (lastSoc === null) {
+    lastSoc = soc
+    lastSocAt = now
+  } else if (soc !== lastSoc) {
     const elapsed = now - lastSocAt
     const dropped = lastSoc - soc
     // Learn only from a clean single-percent discharge step. A multi-percent
@@ -854,8 +885,10 @@ function batteryRemaining(soc) {
     if (dropped === 1 && elapsed >= BATTERY_STEP_MIN_MS && elapsed <= BATTERY_STEP_MAX_MS) {
       socStepDurations.push(elapsed)
       while (socStepDurations.length > BATTERY_STEP_SAMPLES) socStepDurations.shift()
+      saveSocSteps()
     } else if (dropped < 0) {
       socStepDurations.length = 0
+      saveSocSteps()
     }
     lastSoc = soc
     lastSocAt = now
