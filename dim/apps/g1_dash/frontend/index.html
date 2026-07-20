@@ -482,9 +482,10 @@ const COMMANDS = [
     warn: "All joints go limp immediately. If the robot is standing or balancing, <b>IT WILL FALL</b>. Only confirm if it is seated, crouched, or on a gantry. For a moving emergency use E-STOP." },
   { name: "wavehand",  label: "Wave",  cls: "", requires: BALANCING_MODES },
   { name: "shakehand", label: "Shake", cls: "", requires: BALANCING_MODES },
-  { name: "squat", mode: "squat", label: "Squat", cls: "", danger: "amber",
-    confirmTitle: "balance control turns off",
-    warn: "The robot slowly crouches onto its own legs and <b>balance control turns off</b> — it will not catch itself afterwards. It needs clear floor space and should not be leaning or off-balance when you confirm.<br><br>Unlike <b>Sit (Chair)</b> it supports itself, so no chair is needed." },
+  // No confirmation: squat supports itself on its own legs, needs no prep or
+  // clearance, and is reversible with Stiffen.
+  { name: "squat", mode: "squat", label: "Squat", cls: "",
+    hint: "slowly crouches onto its own legs — no chair or clearance needed" },
   // Sit is Unitree's shutdown posture: balance control is off and the robot
   // expects to come down onto something, so the label carries the requirement
   // and it gets the same confirm as the other let-go commands.
