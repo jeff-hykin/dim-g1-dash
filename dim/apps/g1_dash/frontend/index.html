@@ -1122,7 +1122,12 @@ function paletteOpen() { return paletteEls.overlay.classList.contains("show") }
 
 function paletteActions() {
   const actions = []
+  // The palette follows the dock's Advanced toggle, so there's one switch for
+  // both. An advanced command the robot is currently in stays listed, matching
+  // the dock — otherwise the mode you're in would be missing from the menu.
+  const showAdvanced = els.dock.classList.contains("show-adv")
   for (const cmd of COMMANDS) {
+    if (cmd.advanced && !showAdvanced && cmd.mode !== currentMode) continue
     const blocked = blockedReason(cmd)
     actions.push({
       label: cmd.mode ? `${cmd.label} → mode: ${MODES[cmd.mode].label}` : cmd.label,
@@ -1135,9 +1140,8 @@ function paletteActions() {
     })
   }
   actions.push({
-    label: els.dock.classList.contains("show-adv")
-      ? "Hide advanced commands" : "Show advanced commands",
-    hint: "view", run: () => advancedToggle.onclick(),
+    label: showAdvanced ? "Hide advanced commands" : "Show advanced commands",
+    hint: "view", keepOpen: true, run: () => advancedToggle.onclick(),
   })
   actions.push({
     label: camDesired ? "Release camera (free it for other apps)" : "Connect camera",
@@ -1208,6 +1212,13 @@ function closePalette() {
 function firePalette(i) {
   const action = paletteMatches[i]
   if (!action) return
+  // Revealing the advanced commands keeps the palette open — you asked for
+  // them because you want to run one.
+  if (action.keepOpen) {
+    action.run()
+    renderPalette()
+    return
+  }
   closePalette()
   action.run()
 }
