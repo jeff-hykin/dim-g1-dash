@@ -43,7 +43,8 @@ so it's the robot's own answer, not what we last asked for.
 | `walk_basic` | basic controller — stompier walking, accepts drive commands; a **pace** toggle (normal / fast) sits next to it |
 | `stand` | a walking controller that's holding still instead of stepping — still balancing, still under torque control |
 | `stiffen` | joints locked and legs straight, not balancing yet — the step before standing |
-| `squat` / `sit` | Unitree's two seated/crouched postures (FSM 2 and 3; the SDK documents neither) |
+| `squat` | crouched on its own legs, balance control off (the remote's `L1`+`Down`) |
+| `sit` | seated, balance control off — expects a chair or support under it; Unitree's shutdown posture (`L1`+`Left`) |
 | `collapse` | damped: joints limp, the robot rests on whatever holds it |
 | `limp` | zero torque, motors fully off |
 

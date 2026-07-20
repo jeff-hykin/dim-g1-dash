@@ -440,10 +440,13 @@ const MODES = {
                 blurb: "balancing but holding still — Walk/Walk (basic) to step again" },
   stiffen:    { label: "stiffen",    fsms: [4],
                 blurb: "joints locked and legs straight, not balancing yet" },
-  // Two distinct postures Unitree exposes as FSM 2 and 3. The SDK names them
-  // and documents neither, so the panel doesn't claim more than that.
-  squat:      { label: "squat",      fsms: [2], blurb: "Unitree's squat posture (FSM 2)" },
-  sit:        { label: "sit",        fsms: [3], blurb: "Unitree's sit posture (FSM 3)" },
+  // Squat and sit are both "no balance control" postures (the remote's L1+Down
+  // and L1+Left). Squat crouches on its own legs; sit expects something to sit
+  // ON — it's the shutdown posture, done with the robot over a chair.
+  squat:      { label: "squat",      fsms: [2],
+                blurb: "crouched on its own legs, no balance control" },
+  sit:        { label: "sit",        fsms: [3],
+                blurb: "seated, no balance control — needs a chair or support under it" },
   collapse:   { label: "collapse",   fsms: [1],
                 blurb: "damped — joints limp, the robot rests on whatever holds it" },
   limp:       { label: "limp",       fsms: [0],
@@ -481,9 +484,13 @@ const COMMANDS = [
     warn: "All joints go limp immediately. If the robot is standing or balancing, <b>IT WILL FALL</b>. Only confirm if it is seated, crouched, or on a gantry. For a moving emergency use E-STOP." },
   { name: "zerotorque", mode: "limp", label: "Zero Torque", cls: "bad", danger: "red",
     warn: "Motor torque cuts out instantly — an even harder collapse than <b>Collapse</b>. If the robot is standing, <b>IT WILL FALL</b>. Only confirm if it is seated, crouched, or on a gantry." },
-  { name: "squat", mode: "squat", label: "Squat", cls: "" },
-  { name: "sit",   mode: "sit",   label: "Sit",   cls: "" },
-  // (Squat and Sit are separate FSM postures; the SDK describes neither.)
+  { name: "squat", mode: "squat", label: "Squat", cls: "",
+    hint: "slowly crouches on its own legs; balance control is off in this posture" },
+  // Sit is the shutdown posture: balance control is off and the robot expects
+  // to come down onto something. Without a chair under it that's a drop, so it
+  // gets the same confirm as the other let-go commands.
+  { name: "sit", mode: "sit", label: "Sit", cls: "", danger: "amber",
+    warn: "The robot lowers into a seated position with <b>no balance control</b> — it expects a chair or support underneath. With nothing there it will simply come down on the floor. This is the posture Unitree uses for shutdown." },
   { name: "highstand", label: "High Stand", cls: "", requires: BALANCING_MODES,
     hint: "raises the standing height" },
   { name: "lowstand",  label: "Low Stand",  cls: "", requires: BALANCING_MODES,
