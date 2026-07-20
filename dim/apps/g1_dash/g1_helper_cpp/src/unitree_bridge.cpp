@@ -177,23 +177,37 @@ bool UnitreeBridge::command(const std::string& name, const std::string& gait) {
     // Any discrete posture cancels an in-progress drive so the two don't fight.
     if (name != "wavehand" && name != "shakehand") set_velocity(0, 0, 0);
 
+    // The SDK reports refusals as nonzero return codes (exceptions only cover
+    // transport faults) — swallowing them makes a refused command look like
+    // success, so always surface the code.
+    int32_t code = 0;
     try {
         std::lock_guard<std::mutex> rpc_guard(rpc_mutex_);
-        if (name == "damp") client->Damp();
-        else if (name == "ready" || name == "standup") client->StandUp();
-        else if (name == "squat") client->Squat();
-        else if (name == "sit") client->Sit();
-        else if (name == "zerotorque") client->ZeroTorque();
-        else if (name == "balancestand") client->BalanceStand();
-        else if (name == "highstand") client->HighStand();
-        else if (name == "lowstand") client->LowStand();
-        else if (name == "wavehand") client->WaveHand(false);
-        else if (name == "shakehand") client->ShakeHand();
-        else return false;
+        if (name == "damp") code = client->Damp();
+        else if (name == "ready" || name == "standup") code = client->StandUp();
+        else if (name == "squat") code = client->Squat();
+        else if (name == "sit") code = client->Sit();
+        else if (name == "zerotorque") code = client->ZeroTorque();
+        else if (name == "balancestand") code = client->BalanceStand();
+        else if (name == "highstand") code = client->HighStand();
+        else if (name == "lowstand") code = client->LowStand();
+        else if (name == "wavehand") code = client->WaveHand(false);
+        else if (name == "waveturn") code = client->WaveHand(true);
+        else if (name == "shakehand") code = client->ShakeHand();
+        else {
+            protocol_.error("unknown command: " + name);
+            return false;
+        }
     } catch (const std::exception& err) {
         protocol_.error(std::string("command '") + name + "' failed: " + err.what());
         return false;
     }
+    if (code != 0) {
+        protocol_.error("command '" + name + "' refused by the robot (code=" +
+                        std::to_string(code) + ")");
+        return false;
+    }
+    protocol_.log("command '" + name + "' accepted");
 
     std::lock_guard<std::mutex> guard(mode_mutex_);
     mode_ = name;

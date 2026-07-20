@@ -50,12 +50,20 @@ hand-managed hashes. `nlohmann_json` and `libjpeg_turbo` come from nixpkgs.
 | `G1_CAM_PORT` | `8190` | Port for the MJPEG HTTP stream |
 | `G1_CAM_WIDTH` × `G1_CAM_HEIGHT` | `848`×`480` | Capture size — keep 16:9 for the full FOV (4:3 center-crops) |
 
-**MID360 exclusivity:** the Livox-SDK2 binds fixed UDP host ports (56000
-detection + 56101/56201/56301/56401 data), so only **one process per host** can
-own the lidar. If a SLAM stack (e.g. point-lio) is running, this helper can't
-claim it — it reports the conflict once and retries every 10 s, picking the
-lidar up when the other client exits. The reverse also holds: while this helper
-owns the MID360, other Livox clients on this host can't.
+**Exclusive devices — nothing is claimed by default.** Both the MID360 and the
+camera are exclusive-access, so the helper starts with both released and only
+claims one when the panel asks (`config` with `lidar`/`camera`: true — one click
+on the panel's chips). Releasing hands the device back to other programs.
+
+- *MID360:* the Livox-SDK2 binds fixed UDP host ports (56000 detection +
+  56101/56201/56301/56401 data), so only **one process per host** can own the
+  lidar. If a SLAM stack (e.g. point-lio) is running, a connect attempt reports
+  the conflict once and retries every 10 s, picking the lidar up when the other
+  client exits. The reverse also holds: while this helper owns the MID360,
+  other Livox clients on this host can't start.
+- *Camera:* a V4L2 capture node can only stream to one process. On a stock G1,
+  Unitree's own `videohub` service claims the RealSense color node at boot — a
+  connect attempt reports that once and retries quietly until the node frees up.
 
 The MID360 network config JSON is generated from those at startup — nothing to
 ship or hand-edit.
@@ -71,21 +79,25 @@ ship or hand-edit.
 | `{"type":"cmd","name":"balance","gait":"walk"}` | Engage sequence ending in basic FSM 200 + gait |
 | `{"type":"cmd","name":"damp"}` | One-shot posture (see below) |
 | `{"type":"estop"}` | Abort any sequence, zero velocity, `Damp()` immediately |
-| `{"type":"config","camera":false,"lidar":true}` | Pause/resume a stream |
+| `{"type":"config","camera":false,"lidar":true}` | Claim (`true`) / release (`false`) an exclusive device |
 
 Sequence names: `stand` (full engage to the advanced controller), `balance`
 (full engage to basic FSM 200; `gait` is `static` | `walk` | `run`), `advanced`
 (just the R2+A emulation, from get-ready).
 
 One-shot names: `damp`, `ready` (alias `standup`), `squat`, `sit`, `zerotorque`,
-`balancestand`, `highstand`, `lowstand`, `wavehand`, `shakehand`. One-shots are
-refused while a sequence is running — E-STOP aborts it.
+`balancestand`, `highstand`, `lowstand`, `wavehand`, `waveturn`, `shakehand`.
+One-shots are refused while a sequence is running — E-STOP aborts it. The SDK
+reports refusals as nonzero return codes; the helper surfaces them as `error`
+events (e.g. `command 'wavehand' refused by the robot (code=7303)`).
 
-**Telemetry (stdout):** `ready`, `status` (subsystem up/down + `camPort` for the
-MJPEG stream), `state` (IMU rpy/gyro/accel, hottest joint, FSM machine), `loco`
-(1 Hz: loco FSM id, resident motion service, mode label), `seq` (engage-sequence
-step progress), `lidar` (downsampled flat `[x,y,z,…]` cloud + nearest range),
-`log`, `error`. Video is **not** on stdout — it streams from the MJPEG port.
+**Telemetry (stdout):** `ready`, `status` (subsystem up/down, `camWanted` /
+`lidarWanted` claim state, `camPort` for the MJPEG stream), `state` (IMU
+rpy/gyro/accel, hottest joint, FSM machine), `loco` (1 Hz: loco FSM id, resident
+motion service, mode label), `seq` (engage-sequence step progress), `lidar`
+(flat `[x,y,z,…]` cloud accumulated over the last ~4 s + nearest range; the
+points are already flipped for the G1's upside-down lidar mount), `log`,
+`error`. Video is **not** on stdout — it streams from the MJPEG port.
 
 ## The stand sequence (ported from dimos `bin/g1_stand`)
 

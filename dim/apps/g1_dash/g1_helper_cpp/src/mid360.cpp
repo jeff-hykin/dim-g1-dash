@@ -21,15 +21,24 @@ namespace {
 using json = nlohmann::json;
 
 constexpr auto kEmitPeriod = std::chrono::milliseconds(200);  // 5 Hz cloud
-// Keep the wire payload small: stride the raw stream, cap the buffer.
+// Keep the wire payload small: stride the raw stream, cap the accumulated cloud.
 constexpr uint32_t kIngestStride = 4;
-constexpr size_t kMaxPoints = 1500;
+// One 200 ms slice of a MID360 sweep is too sparse to read, so accumulate a few
+// seconds of slices into the emitted cloud.
+constexpr auto kAccumulateWindow = std::chrono::seconds(4);
+constexpr size_t kMaxAccumulatedPoints = 6000;
+constexpr size_t kMaxPointsPerSlice =
+    kMaxAccumulatedPoints / (kAccumulateWindow / kEmitPeriod);
+// Snap coordinates to a cm grid before JSON-encoding — full float precision
+// doubles the payload for no visual gain.
+constexpr float kCloudGridPerMeter = 100.0f;
 // Ignore returns closer than this (the robot's own body / mount).
 constexpr float kSelfIgnoreMeters = 0.25f;
 constexpr float kMmToMeters = 0.001f;
 constexpr float kCmToMeters = 0.01f;
 
 constexpr auto kInitRetryDelay = std::chrono::seconds(10);
+constexpr auto kManagePoll = std::chrono::milliseconds(200);
 // Stock MID360 address on a Unitree G1 (the robot LAN is 192.168.123.0/24).
 constexpr char kDefaultLidarIp[] = "192.168.123.120";
 
@@ -142,44 +151,56 @@ std::string Mid360::write_config_file() {
 bool Mid360::start() {
     g_instance = this;
     running_.store(true);
-    init_thread_ = std::thread(&Mid360::init_loop, this);
+    manage_thread_ = std::thread(&Mid360::manage_loop, this);
     emit_thread_ = std::thread(&Mid360::emit_loop, this);
     return true;
 }
 
-// Keep trying to claim the lidar. Init fails while another Livox client (e.g.
-// a point-lio SLAM stack) holds the fixed UDP host ports; when it lets go, the
-// next attempt succeeds and we flip the panel's lidar status.
-void Mid360::init_loop() {
+// Claim/release the lidar to follow desired_. Init fails while another Livox
+// client (e.g. a point-lio SLAM stack) holds the fixed UDP host ports; when it
+// lets go, the next attempt succeeds and we flip the panel's lidar status.
+void Mid360::manage_loop() {
     bool blocked_reported = false;
-    while (running_.load() && !connected_.load()) {
-        const std::string config_path = write_config_file();
-        if (config_path.empty()) return;
-        if (LivoxLidarSdkInit(config_path.c_str())) {
-            SetLivoxLidarPointCloudCallBack(point_cloud_callback, nullptr);
-            LivoxLidarSdkStart();
-            connected_.store(true);
-            protocol_.log("mid360 lidar up");
-            protocol_.emit({{"type", "status"}, {"lidar", true}});
-            return;
-        }
-        LivoxLidarSdkUninit();  // clear any half-initialized SDK state before retrying
-        if (!blocked_reported) {
-            blocked_reported = true;
-            protocol_.error(
-                "mid360: cannot claim the lidar — its Livox UDP ports are in use "
-                "(another client, e.g. point-lio, owns the MID360). Retrying quietly.");
-        }
-        for (int waited = 0; waited < kInitRetryDelay / std::chrono::seconds(1) &&
-                             running_.load(); ++waited) {
-            std::this_thread::sleep_for(std::chrono::seconds(1));
+    while (running_.load()) {
+        const bool want = desired_.load();
+        if (want && !connected_.load()) {
+            const std::string config_path = write_config_file();
+            if (config_path.empty()) return;  // config error already reported
+            if (LivoxLidarSdkInit(config_path.c_str())) {
+                SetLivoxLidarPointCloudCallBack(point_cloud_callback, nullptr);
+                LivoxLidarSdkStart();
+                connected_.store(true);
+                blocked_reported = false;
+                protocol_.log("mid360 lidar up");
+                protocol_.emit({{"type", "status"}, {"lidar", true}, {"lidarWanted", true}});
+            } else {
+                LivoxLidarSdkUninit();  // clear any half-initialized SDK state
+                if (!blocked_reported) {
+                    blocked_reported = true;
+                    protocol_.error(
+                        "mid360: cannot claim the lidar — its Livox UDP ports are in use "
+                        "(another client, e.g. point-lio, owns the MID360). Retrying quietly.");
+                }
+                const auto retry_at = std::chrono::steady_clock::now() + kInitRetryDelay;
+                while (running_.load() && desired_.load() &&
+                       std::chrono::steady_clock::now() < retry_at) {
+                    std::this_thread::sleep_for(kManagePoll);
+                }
+            }
+        } else if (!want && connected_.load()) {
+            LivoxLidarSdkUninit();
+            connected_.store(false);
+            protocol_.log("mid360 released");
+            protocol_.emit({{"type", "status"}, {"lidar", false}, {"lidarWanted", false}});
+        } else {
+            std::this_thread::sleep_for(kManagePoll);
         }
     }
 }
 
 void Mid360::stop() {
     running_.store(false);
-    if (init_thread_.joinable()) init_thread_.join();
+    if (manage_thread_.joinable()) manage_thread_.join();
     if (emit_thread_.joinable()) emit_thread_.join();
     if (connected_.exchange(false)) {
         LivoxLidarSdkUninit();
@@ -188,17 +209,20 @@ void Mid360::stop() {
 }
 
 void Mid360::ingest(const float* xyz, uint32_t point_count) {
+    if (!connected_.load() || !desired_.load()) return;
     std::lock_guard<std::mutex> guard(points_mutex_);
     total_ingested_ += point_count;
     for (uint32_t i = 0; i < point_count; i += kIngestStride) {
+        // The MID360 is mounted upside down — undo the 180° roll so the cloud
+        // renders right side up (x stays forward, y and z negate).
         const float x = xyz[i * 3 + 0];
-        const float y = xyz[i * 3 + 1];
-        const float z = xyz[i * 3 + 2];
+        const float y = -xyz[i * 3 + 1];
+        const float z = -xyz[i * 3 + 2];
         const float planar = std::sqrt(x * x + y * y);
         if (planar > kSelfIgnoreMeters && (nearest_ < 0.0f || planar < nearest_)) {
             nearest_ = planar;
         }
-        if (points_.size() < kMaxPoints) {
+        if (points_.size() < kMaxPointsPerSlice) {
             points_.push_back({x, y, z});
         }
     }
@@ -207,41 +231,50 @@ void Mid360::ingest(const float* xyz, uint32_t point_count) {
 void Mid360::emit_loop() {
     while (running_.load()) {
         std::this_thread::sleep_for(kEmitPeriod);
-        if (!streaming_.load()) {
-            std::lock_guard<std::mutex> guard(points_mutex_);
-            points_.clear();
-            nearest_ = -1.0f;
-            total_ingested_ = 0;
-            continue;
-        }
 
-        std::vector<std::array<float, 3>> cloud;
+        std::vector<std::array<float, 3>> slice;
         float nearest;
         uint64_t total;
         {
             std::lock_guard<std::mutex> guard(points_mutex_);
-            cloud.swap(points_);
+            slice.swap(points_);
             nearest = nearest_;
             total = total_ingested_;
             nearest_ = -1.0f;
             total_ingested_ = 0;
         }
-        if (total == 0) continue;
+
+        const auto now = std::chrono::steady_clock::now();
+        if (!desired_.load()) {
+            history_.clear();
+        } else if (!slice.empty()) {
+            history_.push_back({now, std::move(slice)});
+        }
+        while (!history_.empty() && now - history_.front().stamp > kAccumulateWindow) {
+            history_.pop_front();
+        }
+
+        size_t accumulated = 0;
+        for (const auto& entry : history_) accumulated += entry.points.size();
+        if (accumulated == 0 && !cloud_on_screen_) continue;
+        cloud_on_screen_ = accumulated > 0;
 
         // Flatten to [x,y,z,x,y,z,...] — a flat array is much cheaper to JSON-encode
         // and to consume in the browser than an array of triples.
         std::vector<float> flat;
-        flat.reserve(cloud.size() * 3);
-        for (const auto& point : cloud) {
-            flat.push_back(point[0]);
-            flat.push_back(point[1]);
-            flat.push_back(point[2]);
+        flat.reserve(accumulated * 3);
+        for (const auto& entry : history_) {
+            for (const auto& point : entry.points) {
+                flat.push_back(std::round(point[0] * kCloudGridPerMeter) / kCloudGridPerMeter);
+                flat.push_back(std::round(point[1] * kCloudGridPerMeter) / kCloudGridPerMeter);
+                flat.push_back(std::round(point[2] * kCloudGridPerMeter) / kCloudGridPerMeter);
+            }
         }
 
         protocol_.emit({
             {"type", "lidar"},
             {"points", static_cast<uint64_t>(total)},
-            {"shown", static_cast<uint64_t>(cloud.size())},
+            {"shown", static_cast<uint64_t>(accumulated)},
             {"nearest", nearest},
             {"cloud", flat},
         });

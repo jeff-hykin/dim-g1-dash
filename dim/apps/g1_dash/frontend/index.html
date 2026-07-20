@@ -9,7 +9,7 @@
   (loco FSM, IMU, joint heat, proximity), and sends engage-sequence, posture and
   drive commands back down over the app-bus.
 
-    keyboard:  W/S forward·back   A/D strafe   Q/E turn   Shift boost   Space E-STOP
+    keyboard:  W/S forward·back   A/D turn   Q/E strafe   Shift boost   Space E-STOP   / action search
 -->
 <html lang="en">
 <head>
@@ -66,6 +66,9 @@
   .subs .s .d { width: 7px; height: 7px; border-radius: 50%; background: var(--muted-fg); }
   .subs .s.up .d { background: var(--ok); }
   .subs .s.down .d { background: color-mix(in oklch, var(--danger) 80%, black); }
+  /* lidar/camera chips double as connect/release toggles */
+  .subs .s.click { cursor: pointer; }
+  .subs .s.click:hover { color: #fff; text-decoration: underline; }
 
   .mode { display: inline-flex; align-items: center; font-size: 11px; font-weight: 700; letter-spacing: .05em;
     text-transform: uppercase; color: rgba(255,255,255,.82);
@@ -219,6 +222,27 @@
   .confirm.amber #confirm-go { background: #d98a10; border-color: #ffd08a;
     box-shadow: 0 0 18px rgba(255,170,40,.7); }
   .confirm.amber #confirm-go:hover { background: #f09a12; }
+
+  /* ── "/" action search palette ── */
+  .palette { position: absolute; left: 50%; bottom: 78px; transform: translateX(-50%); z-index: 25;
+    display: none; flex-direction: column; width: min(380px, 90vw);
+    background: color-mix(in oklch, #0c1017 88%, transparent); backdrop-filter: blur(8px);
+    border: 1px solid color-mix(in oklch, white 18%, transparent); border-radius: calc(var(--radius) * 1.3);
+    box-shadow: 0 16px 44px -14px rgba(0,0,0,.8); overflow: hidden; }
+  .palette.show { display: flex; }
+  .palette input { appearance: none; border: none; outline: none; background: transparent; color: #fff;
+    font: inherit; font-size: 13px; padding: 11px 13px;
+    border-bottom: 1px solid color-mix(in oklch, white 12%, transparent); }
+  .palette input::placeholder { color: var(--muted-fg); }
+  .palette-list { max-height: 260px; overflow-y: auto; padding: 5px; scrollbar-width: thin; }
+  .palette-item { display: flex; align-items: center; gap: 8px; padding: 7px 9px;
+    border-radius: var(--radius); font-size: 12.5px; color: rgba(255,255,255,.9); cursor: pointer; }
+  .palette-item .hint { margin-left: auto; font-size: 10px; letter-spacing: .05em;
+    text-transform: uppercase; color: var(--muted-fg); }
+  .palette-item.sel { background: color-mix(in oklch, var(--primary) 30%, transparent); color: #fff; }
+  .palette-item.red-danger .hint { color: #ff5b4d; }
+  .palette-item.amber-danger .hint { color: #ffc14d; }
+  .palette-empty { padding: 10px 12px; font-size: 12px; color: var(--muted-fg); }
 </style>
 </head>
 <body>
@@ -247,8 +271,8 @@
       <div class="pill err" id="link"><span class="d"></span><span id="link-t">Connecting…</span></div>
       <div class="subs" id="subs">
         <span class="s" id="s-unitree"><span class="d"></span>SDK</span>
-        <span class="s" id="s-lidar"><span class="d"></span>MID360</span>
-        <span class="s" id="s-camera"><span class="d"></span>RS</span>
+        <span class="s click" id="s-lidar"><span class="d"></span>MID360</span>
+        <span class="s click" id="s-camera"><span class="d"></span>RS</span>
       </div>
       <div class="mode" id="mode">—</div>
       <div class="spacer"></div>
@@ -294,7 +318,8 @@
       <div class="lidar-head">
         <h3>MID360</h3>
         <span class="m" id="lidar-m">—</span>
-        <button class="expand" id="lidar-expand">Expand</button>
+        <button class="expand" id="lidar-conn">Release</button>
+        <button class="expand" id="lidar-expand" style="margin-left:6px">Expand</button>
       </div>
       <canvas id="lidar-canvas"></canvas>
     </div>
@@ -306,17 +331,23 @@
     </div>
 
     <div class="dpad">
-      <button class="db tl"  data-drive="tl" title="turn left (Q)">↺</button>
+      <button class="db tl"  data-drive="tl" title="turn left (A)">↺</button>
       <button class="db fwd" data-drive="fwd" title="forward (W)">▲</button>
-      <button class="db tr"  data-drive="tr" title="turn right (E)">↻</button>
-      <button class="db sl"  data-drive="sl" title="strafe left (A)">◀</button>
+      <button class="db tr"  data-drive="tr" title="turn right (D)">↻</button>
+      <button class="db sl"  data-drive="sl" title="strafe left (Q)">◀</button>
       <button class="db stop" id="db-stop" title="stop">STOP</button>
-      <button class="db sr"  data-drive="sr" title="strafe right (D)">▶</button>
+      <button class="db sr"  data-drive="sr" title="strafe right (E)">▶</button>
       <button class="db back" data-drive="back" title="back (S)">▼</button>
     </div>
 
     <div class="dock" id="dock"></div>
     <div class="toast" id="toast"></div>
+
+    <div class="palette" id="palette">
+      <input id="palette-input" type="text" placeholder="Search actions… (↑↓ select · Enter run · Esc close)"
+             autocomplete="off" spellcheck="false" />
+      <div class="palette-list" id="palette-list"></div>
+    </div>
 
     <div class="confirm" id="confirm">
       <div class="confirm-box">
@@ -369,7 +400,12 @@ const COMMANDS = [
   { name: "squat",      label: "Squat",         cls: "" },
   { name: "sit",        label: "Sit",           cls: "" },
   { name: "wavehand",   label: "Wave",          cls: "" },
+  { name: "waveturn",   label: "Wave + Turn",   cls: "" },
   { name: "shakehand",  label: "Shake",         cls: "" },
+  { name: "highstand",  label: "High Stand",    cls: "" },
+  { name: "lowstand",   label: "Low Stand",     cls: "" },
+  { name: "balancestand", label: "Balance Stand", cls: "", danger: "amber",
+    warn: "The robot takes torque control and balance-stands. Make sure it is upright with its feet under it — from a slump or a hang this will jerk the joints." },
   { name: "zerotorque", label: "Zero Torque",   cls: "warn", danger: "red",
     warn: "Motor torque cuts out instantly — an even harder collapse than damp. If the robot is standing, <b>IT WILL FALL</b>. Only confirm if it is seated, crouched, or on a gantry." },
 ]
@@ -396,6 +432,7 @@ const els = {
   vTemp: document.getElementById("v-temp"), vNear: document.getElementById("v-near"),
   vPts: document.getElementById("v-pts"),
   lidarCard: document.getElementById("lidar-card"), lidarExpand: document.getElementById("lidar-expand"),
+  lidarConn: document.getElementById("lidar-conn"),
   lidarM: document.getElementById("lidar-m"), lidarCanvas: document.getElementById("lidar-canvas"),
   vel: document.getElementById("vel"), vx: document.getElementById("vx"), vy: document.getElementById("vy"), vw: document.getElementById("vw"),
   dock: document.getElementById("dock"), toast: document.getElementById("toast"),
@@ -436,21 +473,22 @@ confirmEls.go.onclick = () => { const action = confirmAction; closeConfirm(); if
 
 // ── command dock ──
 let gaitSelect = null
+function runCommand(cmd) {
+  if (!helperReady) return toast("Helper not connected yet")
+  const fire = () => {
+    const payload = { name: cmd.name }
+    if (cmd.gait && gaitSelect) payload.gait = gaitSelect.value
+    dimApp.send("cmd", payload)
+    toast(cmd.seq ? cmd.label + " — engaging…" : cmd.label)
+  }
+  if (cmd.danger) askConfirm(cmd, fire)
+  else fire()
+}
 for (const cmd of COMMANDS) {
   const button = document.createElement("button")
   button.className = "act " + cmd.cls
   button.textContent = cmd.label
-  button.onclick = () => {
-    if (!helperReady) return toast("Helper not connected yet")
-    const fire = () => {
-      const payload = { name: cmd.name }
-      if (cmd.gait && gaitSelect) payload.gait = gaitSelect.value
-      dimApp.send("cmd", payload)
-      toast(cmd.seq ? cmd.label + " — engaging…" : cmd.label)
-    }
-    if (cmd.danger) askConfirm(cmd, fire)
-    else fire()
-  }
+  button.onclick = () => runCommand(cmd)
   els.dock.appendChild(button)
   if (cmd.gait) {
     gaitSelect = document.createElement("select")
@@ -469,16 +507,66 @@ for (const cmd of COMMANDS) {
 els.estop.onclick = () => { dimApp.send("estop", {}); toast("E-STOP — damping") }
 
 // ── status / link rendering ──
+// What the helper is asked to hold. The MID360 and camera are exclusive-access,
+// so nothing is claimed by default — connecting takes one click (chip, lidar
+// card button, or the "/" palette). The helper reports its desired state as
+// camWanted/lidarWanted so a reloaded panel stays in sync.
+let camDesired = false
+let lidarDesired = false
+
 function setSub(el, up) {
   if (typeof up !== "boolean") return // partial status event — leave the dot as-is
   el.classList.toggle("up", up === true)
   el.classList.toggle("down", up === false)
 }
+function updateToggleLabels() {
+  els.lidarConn.textContent = lidarDesired ? "Release" : "Connect"
+  els.sLidar.title = lidarDesired
+    ? "MID360 claimed by the dash — click to release it for other apps"
+    : "MID360 released — click to connect"
+  els.sCamera.title = camDesired
+    ? "Camera claimed by the dash — click to release it for other apps"
+    : "Camera released — click to connect"
+}
+function toggleCamera() {
+  camDesired = !camDesired
+  dimApp.send("config", { camera: camDesired })
+  toast(camDesired ? "Connecting camera…" : "Camera released for other apps")
+  if (!camDesired) {
+    els.camWrap.classList.remove("live")
+    els.cam.src = ""
+    clearTimeout(camRetryTimer)
+    els.camPhText.textContent = "Camera released — press / and run “Connect camera”"
+  }
+  updateToggleLabels()
+}
+function toggleLidar() {
+  lidarDesired = !lidarDesired
+  dimApp.send("config", { lidar: lidarDesired })
+  toast(lidarDesired ? "Connecting MID360…" : "MID360 released for other apps")
+  updateToggleLabels()
+}
+els.sCamera.onclick = toggleCamera
+els.sLidar.onclick = toggleLidar
+els.lidarConn.onclick = toggleLidar
+
 function renderStatus(status) {
   if (!status) return
+  if (typeof status.camWanted === "boolean") camDesired = status.camWanted
+  if (typeof status.lidarWanted === "boolean") lidarDesired = status.lidarWanted
+  updateToggleLabels()
   setSub(els.sUnitree, status.unitree)
   setSub(els.sLidar, status.lidar)
   setSub(els.sCamera, status.camera)
+  if (status.camera === true) connectCamera()
+  if (status.camera === false) {
+    els.camWrap.classList.remove("live")
+    els.cam.src = ""
+    clearTimeout(camRetryTimer)
+    els.camPhText.textContent = camDesired
+      ? "Camera off — device busy (Unitree's videohub owns it?) or unplugged. Retrying…"
+      : "Camera not connected — click the RS chip (or press / → Connect camera)"
+  }
   if (typeof status.camPort === "number" && status.camPort !== camPort) {
     camPort = status.camPort
     connectCamera()
@@ -490,7 +578,9 @@ function renderLink() {
   } else {
     els.link.className = "pill ok"; els.linkT.textContent = "Onboard"
     if (!els.camWrap.classList.contains("live")) {
-      els.camPhText.textContent = "Connecting to camera stream…"
+      els.camPhText.textContent = camDesired
+        ? "Connecting to camera stream…"
+        : "Camera not connected — click the RS chip (or press / → Connect camera)"
     }
   }
 }
@@ -502,13 +592,14 @@ function renderLink() {
 // (helper restart, camera busy) — the helper side also retries the device.
 let camRetryTimer = null
 function connectCamera() {
-  if (!camPort) return
+  if (!camPort || !camDesired) return
   clearTimeout(camRetryTimer)
   els.cam.src = `http://${location.hostname}:${camPort}/stream?t=${Date.now()}`
 }
 els.cam.onload = () => { els.camWrap.classList.add("live") }
 els.cam.onerror = () => {
   els.camWrap.classList.remove("live")
+  if (!camDesired) return
   els.camPhText.textContent = "Camera stream offline — retrying… (device busy or unplugged)"
   clearTimeout(camRetryTimer)
   camRetryTimer = setTimeout(connectCamera, 3000)
@@ -714,11 +805,15 @@ function updateDriveState() {
   else if (sendTimer) stopSending()
 }
 
-const KEY_MAP = { KeyW: "fwd", KeyS: "back", KeyA: "sl", KeyD: "sr", KeyQ: "tl", KeyE: "tr" }
+const KEY_MAP = { KeyW: "fwd", KeyS: "back", KeyA: "tl", KeyD: "tr", KeyQ: "sl", KeyE: "sr" }
 addEventListener("keydown", (e) => {
+  // palette open: its own input handles keys (and stops propagation); this
+  // guard catches the case where the input lost focus while still visible
+  if (paletteOpen()) { if (e.code === "Escape") closePalette(); return }
   if (e.code === "Escape") { closeConfirm(); return }
   if (e.code === "Space") { e.preventDefault(); dimApp.send("estop", {}); toast("E-STOP — damping"); return }
   if (confirmAction) return // modal open — don't drive underneath it
+  if (e.code === "Slash") { e.preventDefault(); openPalette(); return }
   if (e.code === "ShiftLeft" || e.code === "ShiftRight") { keys.boost = true; return }
   const dir = KEY_MAP[e.code]
   if (!dir || keys[dir]) return
@@ -746,9 +841,115 @@ for (const btn of document.querySelectorAll(".db[data-drive]")) {
 document.getElementById("db-stop").onclick = () => { for (const k in keys) keys[k] = false
   for (const b of document.querySelectorAll(".db.held")) b.classList.remove("held"); if (sendTimer) stopSending() }
 
+// ── "/" action search palette ──
+// Every dock/chip action, reachable by keyboard: / to open, type to filter,
+// ↑↓ + Enter to run (dangerous commands still raise the confirm modal), Esc
+// to close. Opening it releases held drive keys so typing can't move the robot.
+const paletteEls = {
+  overlay: document.getElementById("palette"),
+  input: document.getElementById("palette-input"),
+  list: document.getElementById("palette-list"),
+}
+let paletteIndex = 0
+let paletteMatches = []
+function paletteOpen() { return paletteEls.overlay.classList.contains("show") }
+
+function paletteActions() {
+  const actions = []
+  for (const cmd of COMMANDS) {
+    actions.push({
+      label: cmd.label,
+      hint: cmd.seq ? "sequence" : cmd.danger === "red" ? "danger" : cmd.danger === "amber" ? "balance" : "",
+      danger: cmd.danger,
+      run: () => runCommand(cmd),
+    })
+  }
+  for (const gait of GAITS) actions.push({
+    label: `Gait for Basic: ${gait}`, hint: "select",
+    run: () => { if (gaitSelect) gaitSelect.value = gait; toast(`Gait for Basic → ${gait}`) },
+  })
+  actions.push({
+    label: camDesired ? "Release camera (free it for other apps)" : "Connect camera",
+    hint: "device", run: toggleCamera,
+  })
+  actions.push({
+    label: lidarDesired ? "Release MID360 (free it for other apps)" : "Connect MID360",
+    hint: "device", run: toggleLidar,
+  })
+  actions.push({
+    label: els.lidarCard.classList.contains("big") ? "Shrink lidar view" : "Expand lidar view",
+    hint: "view", run: () => els.lidarExpand.onclick(),
+  })
+  actions.push({
+    label: "E-STOP", hint: "danger", danger: "red",
+    run: () => { dimApp.send("estop", {}); toast("E-STOP — damping") },
+  })
+  return actions
+}
+function renderPalette() {
+  const words = paletteEls.input.value.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  paletteMatches = paletteActions().filter(a => words.every(w => a.label.toLowerCase().includes(w)))
+  paletteIndex = Math.max(0, Math.min(paletteIndex, paletteMatches.length - 1))
+  paletteEls.list.innerHTML = ""
+  if (!paletteMatches.length) {
+    const empty = document.createElement("div")
+    empty.className = "palette-empty"
+    empty.textContent = "No matching action"
+    paletteEls.list.appendChild(empty)
+    return
+  }
+  paletteMatches.forEach((action, i) => {
+    const item = document.createElement("div")
+    item.className = "palette-item" + (i === paletteIndex ? " sel" : "") +
+      (action.danger ? ` ${action.danger}-danger` : "")
+    const label = document.createElement("span")
+    label.textContent = action.label
+    item.appendChild(label)
+    if (action.hint) {
+      const hint = document.createElement("span")
+      hint.className = "hint"
+      hint.textContent = action.hint
+      item.appendChild(hint)
+    }
+    item.onclick = () => firePalette(i)
+    paletteEls.list.appendChild(item)
+  })
+  const selected = paletteEls.list.children[paletteIndex]
+  if (selected?.scrollIntoView) selected.scrollIntoView({ block: "nearest" })
+}
+function openPalette() {
+  paletteEls.overlay.classList.add("show")
+  paletteEls.input.value = ""
+  paletteIndex = 0
+  renderPalette()
+  paletteEls.input.focus()
+  // opening the palette releases any held drive keys (safety)
+  for (const k in keys) keys[k] = false
+  if (sendTimer) stopSending()
+}
+function closePalette() {
+  paletteEls.overlay.classList.remove("show")
+  paletteEls.input.blur()
+}
+function firePalette(i) {
+  const action = paletteMatches[i]
+  if (!action) return
+  closePalette()
+  action.run()
+}
+paletteEls.input.addEventListener("input", () => { paletteIndex = 0; renderPalette() })
+paletteEls.input.addEventListener("keydown", (e) => {
+  e.stopPropagation() // typed W/A/Space must not drive or E-STOP the robot
+  if (e.code === "Escape") { closePalette(); return }
+  if (e.code === "ArrowDown") { e.preventDefault(); paletteIndex++; renderPalette(); return }
+  if (e.code === "ArrowUp") { e.preventDefault(); paletteIndex = Math.max(0, paletteIndex - 1); renderPalette(); return }
+  if (e.code === "Enter") { e.preventDefault(); firePalette(paletteIndex) }
+})
+
 // ── boot ──
 initLidar()
 renderLink()
+updateToggleLabels()
 dimApp.send("hello", {}) // ask the backend to replay current status
 </script>
 </body>

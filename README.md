@@ -10,7 +10,13 @@ talks straight to its hardware:
 - **Live camera** — the onboard RealSense color node, read via plain Linux V4L2
   (no librealsense, so other consumers keep the depth/IR nodes) and served as an
   MJPEG video stream the panel plays directly.
-- **3D lidar** — the MID360 (Livox) point cloud, rendered live with three.js.
+- **3D lidar** — the MID360 (Livox) point cloud, accumulated over ~4 s and
+  rendered live with three.js (pre-flipped for the G1's upside-down mount).
+- **Connect/disconnect** — camera and lidar are exclusive-access devices, so
+  the dash claims **neither by default**. One click on the MID360/RS status
+  chips (or the lidar card's Connect button, or the `/` palette) claims or
+  releases them for other programs — e.g. Unitree's videohub holds the camera
+  and a point-lio SLAM stack holds the lidar.
 - **Telemetry** — loco controller FSM + resident motion service, IMU attitude
   (roll/pitch/yaw with an artificial horizon), hottest joint temperature, and
   nearest-obstacle / center-depth proximity.
@@ -18,10 +24,12 @@ talks straight to its hardware:
   `bin/g1_stand` flow, ported to C++): switch to the "ai" motion service, damp,
   get-ready, then emulate a held R2+A on the wireless-controller topic to enter
   the advanced balance controller (FSM 801/802) — the one that walks naturally.
-  Then drive with `W A S D` (+ `Q`/`E` to turn, `Shift` to boost) or the
-  on-screen d-pad. **Basic** engages the FSM 200 fallback with a selectable gait
-  (static/walk/run); Damp, Get Ready, Sit, Squat, Wave, Shake and Zero Torque are
-  one-shots. `Space` is a hardware-style **E-STOP** (aborts sequences too).
+  Then drive with `W`/`S` (forward/back), `A`/`D` (turn), `Q`/`E` (strafe),
+  `Shift` to boost — or the on-screen d-pad. **Basic** engages the FSM 200
+  fallback with a selectable gait (static/walk/run); Damp, Get Ready, Sit,
+  Squat, Wave, Shake, High/Low/Balance Stand and Zero Torque are one-shots.
+  `Space` is a hardware-style **E-STOP** (aborts sequences too), and `/` opens
+  a searchable action palette — every button is keyboard-reachable.
 
 | Camera + controls | Lidar point cloud |
 | --- | --- |
@@ -74,7 +82,7 @@ dim/apps/g1_dash/
   g1_helper_cpp/      C++ helper — MID360 + RealSense + unitree_sdk2, JSON over stdio
     flake.nix         builds it (SDKs pinned as flake inputs), run via nix
     CMakeLists.txt
-    src/              protocol, unitree_bridge, mid360, realsense, main
+    src/              protocol, unitree_bridge, mid360, webcam, main
 ```
 
 ## Safety

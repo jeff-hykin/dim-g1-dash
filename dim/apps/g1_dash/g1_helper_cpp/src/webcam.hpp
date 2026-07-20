@@ -34,9 +34,13 @@ public:
     bool start();
     void stop();
 
-    // Pause/resume frame capture (connections stay open, stream just stalls).
-    void set_streaming(bool enabled);
+    // Claim (true) or release (false) the camera. Releasing closes the V4L2
+    // device so other programs can grab it; HTTP connections stay open and the
+    // stream resumes when re-enabled.
+    void set_enabled(bool enabled);
 
+    bool connected() const { return connected_.load(); }
+    bool enabled() const { return desired_.load(); }
     int port() const { return port_; }
 
 private:
@@ -54,11 +58,14 @@ private:
     uint32_t requested_width_ = 0, requested_height_ = 0;
 
     std::atomic<bool> running_{false};
-    std::atomic<bool> streaming_{true};
+    // Exclusive-access device: stay hands-off until the panel asks to connect.
+    std::atomic<bool> desired_{false};
+    std::atomic<bool> connected_{false};
     std::thread capture_thread_;
     std::thread server_thread_;
 
     // V4L2 device state (capture thread only).
+    bool open_failure_logged_ = false;  // one busy/open error per outage, not per retry
     int device_fd_ = -1;
     uint32_t pixel_format_ = 0;
     uint32_t width_ = 0, height_ = 0;

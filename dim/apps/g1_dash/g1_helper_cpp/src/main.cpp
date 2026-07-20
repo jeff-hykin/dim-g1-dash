@@ -50,14 +50,19 @@ int main(int argc, char** argv) {
     g1::Webcam camera(protocol);
 
     const bool unitree_ok = unitree.start();
-    lidar.start();  // claims the lidar in the background — retries while it's owned elsewhere
-    const bool camera_ok = camera.start();
+    // Camera and lidar are exclusive-access devices, so neither is claimed until
+    // the panel asks (config camera/lidar: true) — start() only spins up the
+    // MJPEG server and the manager threads.
+    lidar.start();
+    camera.start();
 
     protocol.emit({
         {"type", "status"},
         {"unitree", unitree_ok},
         {"lidar", lidar.connected()},
-        {"camera", camera_ok},
+        {"lidarWanted", lidar.enabled()},
+        {"camera", camera.connected()},
+        {"camWanted", camera.enabled()},
         {"camPort", camera.port()},
         {"iface", network_interface},
     });
@@ -79,15 +84,13 @@ int main(int argc, char** argv) {
             unitree.set_velocity(message.value("vx", 0.0), message.value("vy", 0.0),
                                  message.value("omega", 0.0));
         } else if (type == "cmd") {
-            const std::string name = message.value("name", "");
-            if (!unitree.command(name, message.value("gait", "static"))) {
-                protocol.error("unknown or failed command: " + name);
-            }
+            // command() reports its own errors (refusal codes, sequences, unknowns)
+            unitree.command(message.value("name", ""), message.value("gait", "static"));
         } else if (type == "estop") {
             unitree.estop();
         } else if (type == "config") {
-            if (message.contains("camera")) camera.set_streaming(message["camera"].get<bool>());
-            if (message.contains("lidar")) lidar.set_streaming(message["lidar"].get<bool>());
+            if (message.contains("camera")) camera.set_enabled(message["camera"].get<bool>());
+            if (message.contains("lidar")) lidar.set_enabled(message["lidar"].get<bool>());
         }
     }
 

@@ -132,7 +132,7 @@ void Webcam::stop() {
     close_device();
 }
 
-void Webcam::set_streaming(bool enabled) { streaming_.store(enabled); }
+void Webcam::set_enabled(bool enabled) { desired_.store(enabled); }
 
 // Find a V4L2 node that can actually stream YUYV or MJPG video. On the G1 that
 // is the RealSense color node (its depth/IR/metadata siblings expose Z16/GREY
@@ -168,7 +168,10 @@ std::string Webcam::pick_device() {
 bool Webcam::open_device(const std::string& path) {
     device_fd_ = open(path.c_str(), O_RDWR);
     if (device_fd_ < 0) {
-        protocol_.error("webcam: cannot open " + path + " (" + std::strerror(errno) + ")");
+        if (!open_failure_logged_) {
+            open_failure_logged_ = true;
+            protocol_.error("webcam: cannot open " + path + " (" + std::strerror(errno) + ")");
+        }
         return false;
     }
 
@@ -181,8 +184,12 @@ bool Webcam::open_device(const std::string& path) {
     if (xioctl(device_fd_, VIDIOC_S_FMT, &format) != 0) {
         format.fmt.pix.pixelformat = V4L2_PIX_FMT_MJPEG;
         if (xioctl(device_fd_, VIDIOC_S_FMT, &format) != 0) {
-            protocol_.error("webcam: " + path + " S_FMT failed (" + std::strerror(errno) +
-                            ") — device busy?");
+            if (!open_failure_logged_) {
+                open_failure_logged_ = true;
+                protocol_.error("webcam: " + path + " is busy (" + std::strerror(errno) +
+                                ") — another process owns the camera. On a stock G1 that is "
+                                "Unitree's videohub service; retrying quietly until it's free.");
+            }
             close_device();
             return false;
         }
@@ -226,11 +233,15 @@ bool Webcam::open_device(const std::string& path) {
 
     v4l2_buf_type type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     if (xioctl(device_fd_, VIDIOC_STREAMON, &type) != 0) {
-        protocol_.error("webcam: STREAMON failed on " + path + " (" + std::strerror(errno) +
-                        ") — device busy?");
+        if (!open_failure_logged_) {
+            open_failure_logged_ = true;
+            protocol_.error("webcam: STREAMON failed on " + path + " (" + std::strerror(errno) +
+                            ") — device busy?");
+        }
         close_device();
         return false;
     }
+    open_failure_logged_ = false;
 
     if (!jpeg_compressor_) jpeg_compressor_ = tjInitCompress();
     rgb_scratch_.resize(static_cast<size_t>(width_) * height_ * 3);
@@ -280,7 +291,7 @@ bool Webcam::capture_frame() {
     buffer.memory = V4L2_MEMORY_MMAP;
     if (xioctl(device_fd_, VIDIOC_DQBUF, &buffer) != 0) return false;
 
-    if (streaming_.load() && buffer.bytesused > 0) {
+    if (buffer.bytesused > 0) {
         const uint8_t* raw = static_cast<const uint8_t*>(buffers_[buffer.index].start);
         if (pixel_format_ == V4L2_PIX_FMT_MJPEG) {
             publish_jpeg(raw, buffer.bytesused);
@@ -303,13 +314,23 @@ bool Webcam::capture_frame() {
 
 void Webcam::capture_loop() {
     while (running_.load()) {
-        const std::string path = pick_device();
-        if (path.empty() || !open_device(path)) {
-            std::this_thread::sleep_for(kRetryDelay);
+        if (!desired_.load()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
             continue;
         }
+        const std::string path = pick_device();
+        if (path.empty() || !open_device(path)) {
+            const auto retry_at = std::chrono::steady_clock::now() + kRetryDelay;
+            while (running_.load() && desired_.load() &&
+                   std::chrono::steady_clock::now() < retry_at) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+            continue;
+        }
+        connected_.store(true);
+        protocol_.emit({{"type", "status"}, {"camera", true}, {"camWanted", true}});
         int consecutive_failures = 0;
-        while (running_.load()) {
+        while (running_.load() && desired_.load()) {
             if (capture_frame()) {
                 consecutive_failures = 0;
             } else if (++consecutive_failures >= 3) {
@@ -318,7 +339,10 @@ void Webcam::capture_loop() {
             }
         }
         close_device();
-        if (running_.load()) std::this_thread::sleep_for(kRetryDelay);
+        connected_.store(false);
+        protocol_.emit({{"type", "status"}, {"camera", false}, {"camWanted", desired_.load()}});
+        if (!desired_.load()) protocol_.log("webcam: camera released");
+        if (running_.load() && desired_.load()) std::this_thread::sleep_for(kRetryDelay);
     }
     if (jpeg_compressor_) {
         tjDestroy(static_cast<tjhandle>(jpeg_compressor_));
