@@ -440,8 +440,10 @@ const MODES = {
                 blurb: "balancing but holding still — Walk/Walk (basic) to step again" },
   stiffen:    { label: "stiffen",    fsms: [4],
                 blurb: "joints locked and legs straight, not balancing yet" },
-  squat:      { label: "squat",      fsms: [2], blurb: "crouched" },
-  sit:        { label: "sit",        fsms: [3], blurb: "seated" },
+  // Two distinct postures Unitree exposes as FSM 2 and 3. The SDK names them
+  // and documents neither, so the panel doesn't claim more than that.
+  squat:      { label: "squat",      fsms: [2], blurb: "Unitree's squat posture (FSM 2)" },
+  sit:        { label: "sit",        fsms: [3], blurb: "Unitree's sit posture (FSM 3)" },
   collapse:   { label: "collapse",   fsms: [1],
                 blurb: "damped — joints limp, the robot rests on whatever holds it" },
   limp:       { label: "limp",       fsms: [0],
@@ -481,6 +483,7 @@ const COMMANDS = [
     warn: "Motor torque cuts out instantly — an even harder collapse than <b>Collapse</b>. If the robot is standing, <b>IT WILL FALL</b>. Only confirm if it is seated, crouched, or on a gantry." },
   { name: "squat", mode: "squat", label: "Squat", cls: "" },
   { name: "sit",   mode: "sit",   label: "Sit",   cls: "" },
+  // (Squat and Sit are separate FSM postures; the SDK describes neither.)
   { name: "highstand", label: "High Stand", cls: "", requires: BALANCING_MODES,
     hint: "raises the standing height" },
   { name: "lowstand",  label: "Low Stand",  cls: "", requires: BALANCING_MODES,
@@ -489,12 +492,14 @@ const COMMANDS = [
   { name: "waveturn",  label: "Wave + Turn", cls: "", requires: BALANCING_MODES },
   { name: "shakehand", label: "Shake",       cls: "", requires: BALANCING_MODES },
 ]
-// Gait applies to "Walk (basic)" — how it steps once balancing. The SDK's third
-// value (balance mode 0, "static") is deliberately not here: it is the very same
-// call as the Stand button, and offering it twice under two names was confusing.
-const GAITS = [
-  { value: "walk", label: "walk", hint: "normal walking gait" },
-  { value: "run",  label: "run",  hint: "faster, longer strides" },
+// How hard "Walk (basic)" steps. Called "pace" rather than "gait: walk/run" so
+// it can't be confused with the walk MODE — they're different axes. The wire
+// values stay walk/run (the helper maps them to balance modes 1 and 2); the
+// SDK's third value, balance mode 0, is deliberately absent: it is the very
+// same call as the Stand button.
+const PACES = [
+  { value: "walk", label: "normal", hint: "normal walking pace" },
+  { value: "run",  label: "fast",   hint: "faster, longer strides" },
 ]
 // FSM id → mode key, built from MODES so the two can't drift apart.
 const FSM_TO_MODE = {}
@@ -639,25 +644,25 @@ function commandTitle(cmd) {
 }
 
 // ── command dock ──
-let gaitButton = null
-let currentGait = GAITS[0].value
-function renderGaitButton() {
-  if (!gaitButton) return
-  const gait = GAITS.find(g => g.value === currentGait)
-  gaitButton.textContent = "gait: " + gait.label
-  gaitButton.disabled = currentMode !== "walk_basic"
-  gaitButton.title = gaitButton.disabled
-    ? `gait — needs mode: walk_basic${currentMode ? ` — robot is in ${MODES[currentMode].label}` : ""}`
-    : `${gait.hint} — click for ${GAITS[(GAITS.indexOf(gait) + 1) % GAITS.length].label}`
+let paceButton = null
+let currentPace = PACES[0].value
+function renderPaceButton() {
+  if (!paceButton) return
+  const pace = PACES.find(p => p.value === currentPace)
+  paceButton.textContent = "pace: " + pace.label
+  paceButton.disabled = currentMode !== "walk_basic"
+  paceButton.title = paceButton.disabled
+    ? `pace — needs mode: walk_basic${currentMode ? ` — robot is in ${MODES[currentMode].label}` : ""}`
+    : `${pace.hint} — click for ${PACES[(PACES.indexOf(pace) + 1) % PACES.length].label}`
 }
-// Apply the chosen gait. Only meaningful while walk_basic is running; at any
+// Apply the chosen pace. Only meaningful while walk_basic is running; at any
 // other time it's just remembered for the next engage.
-function setGait(value) {
-  currentGait = value
-  renderGaitButton()
-  const gaitCommand = COMMANDS.find(cmd => cmd.gait)
+function setPace(value) {
+  currentPace = value
+  renderPaceButton()
+  const paceCommand = COMMANDS.find(cmd => cmd.gait)
   if (currentMode === "walk_basic") {
-    runCommand({ ...gaitCommand, seq: false, danger: null, label: "Gait" })
+    runCommand({ ...paceCommand, seq: false, danger: null, label: "Pace" })
   }
 }
 const commandButtons = new Map()
@@ -667,7 +672,7 @@ function runCommand(cmd) {
   if (blocked) return toast(`${cmd.label} ${blocked}`)
   const fire = () => {
     const payload = { name: cmd.name }
-    if (cmd.gait) payload.gait = currentGait
+    if (cmd.gait) payload.gait = currentPace
     dimApp.send("cmd", payload)
     toast(cmd.seq ? cmd.label + " — engaging…" : cmd.label)
   }
@@ -681,7 +686,7 @@ function refreshCommandStates() {
     button.title = commandTitle(cmd)
     button.classList.toggle("active-mode", !!cmd.mode && cmd.mode === currentMode)
   }
-  renderGaitButton()
+  renderPaceButton()
   const drivable = !currentMode || DRIVING_MODES.includes(currentMode)
   for (const button of document.querySelectorAll(".db[data-drive]")) {
     button.classList.toggle("blocked", !drivable)
@@ -697,15 +702,15 @@ for (const cmd of COMMANDS) {
   button.onclick = () => runCommand(cmd)
   commandButtons.set(cmd, button)
   els.dock.appendChild(button)
-  // Gait is a plain toggle button, not a <select>: with two values a dropdown
+  // Pace is a plain toggle button, not a <select>: with two values a dropdown
   // adds nothing, and a native select can't be made to match these buttons.
   if (cmd.gait) {
-    gaitButton = document.createElement("button")
-    gaitButton.className = "act"
-    gaitButton.onclick = () =>
-      setGait(GAITS[(GAITS.findIndex(g => g.value === currentGait) + 1) % GAITS.length].value)
-    els.dock.appendChild(gaitButton)
-    renderGaitButton()
+    paceButton = document.createElement("button")
+    paceButton.className = "act"
+    paceButton.onclick = () =>
+      setPace(PACES[(PACES.findIndex(p => p.value === currentPace) + 1) % PACES.length].value)
+    els.dock.appendChild(paceButton)
+    renderPaceButton()
   }
 }
 
@@ -919,9 +924,9 @@ function renderLoco(msg) {
     }
     // Keep the gait picker showing what the robot is actually doing.
     if (msg.balance === BALANCE_WALK || msg.balance === BALANCE_RUN) {
-      currentGait = msg.balance === BALANCE_RUN ? "run" : "walk"
+      currentPace = msg.balance === BALANCE_RUN ? "run" : "walk"
     }
-    renderGaitButton()
+    renderPaceButton()
   }
   if (typeof msg.motionMode === "string") els.vMotion.textContent = msg.motionMode
 }
@@ -1124,11 +1129,11 @@ function paletteActions() {
       run: () => runCommand(cmd),
     })
   }
-  for (const gait of GAITS) actions.push({
-    label: `Gait (walk_basic): ${gait.label}`, hint: gait.hint,
+  for (const pace of PACES) actions.push({
+    label: `Pace (walk_basic): ${pace.label}`, hint: pace.hint,
     run: () => {
-      setGait(gait.value)
-      toast(`Gait → ${gait.label}`)
+      setPace(pace.value)
+      toast(`Pace → ${pace.label}`)
     },
   })
   actions.push({

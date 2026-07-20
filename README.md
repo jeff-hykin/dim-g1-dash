@@ -40,10 +40,10 @@ so it's the robot's own answer, not what we last asked for.
 | Mode | What it means |
 | --- | --- |
 | `walk` | advanced controller — natural walking, accepts drive commands |
-| `walk_basic` | basic controller — stompier walking, accepts drive commands; a gait picker (walk / run) sits next to it |
+| `walk_basic` | basic controller — stompier walking, accepts drive commands; a **pace** toggle (normal / fast) sits next to it |
 | `stand` | a walking controller that's holding still instead of stepping — still balancing, still under torque control |
 | `stiffen` | joints locked and legs straight, not balancing yet — the step before standing |
-| `squat` / `sit` | crouched / seated |
+| `squat` / `sit` | Unitree's two seated/crouched postures (FSM 2 and 3; the SDK documents neither) |
 | `collapse` | damped: joints limp, the robot rests on whatever holds it |
 | `limp` | zero torque, motors fully off |
 
@@ -123,7 +123,7 @@ Everything in the panel is keyboard-reachable:
 | `Esc` | close the palette or a danger dialog |
 
 The palette covers everything the mouse can do — mode changes, postures,
-gestures, gait selection, camera/lidar connect & release, lidar view expand,
+gestures, pace selection, camera/lidar connect & release, lidar view expand,
 E-STOP — so dangerous commands keep their confirmation dialog on the keyboard
 path too (a stray double-`Enter` lands on Cancel, never on confirm). Actions
 blocked by the current mode are dimmed there too, with the reason inline.
