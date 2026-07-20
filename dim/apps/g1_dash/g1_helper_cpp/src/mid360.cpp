@@ -3,8 +3,12 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <limits>
 
+#include <arpa/inet.h>
+#include <ifaddrs.h>
+#include <netinet/in.h>
 #include <nlohmann/json.hpp>
 
 #include "livox_lidar_api.h"
@@ -25,9 +29,38 @@ constexpr float kSelfIgnoreMeters = 0.25f;
 constexpr float kMmToMeters = 0.001f;
 constexpr float kCmToMeters = 0.01f;
 
+constexpr auto kInitRetryDelay = std::chrono::seconds(10);
+// Stock MID360 address on a Unitree G1 (the robot LAN is 192.168.123.0/24).
+constexpr char kDefaultLidarIp[] = "192.168.123.120";
+
 std::string env_or(const char* key, const char* fallback) {
     const char* value = std::getenv(key);
     return value && *value ? std::string(value) : std::string(fallback);
+}
+
+// The host IP the lidar should stream to: the local address that shares the
+// lidar's /24. Beats a hardcoded default that breaks on robots with a
+// different LAN plan.
+std::string detect_host_ip(const std::string& lidar_ip) {
+    const auto last_dot = lidar_ip.rfind('.');
+    if (last_dot == std::string::npos) return "";
+    const std::string subnet_prefix = lidar_ip.substr(0, last_dot + 1);
+
+    ifaddrs* interfaces = nullptr;
+    if (getifaddrs(&interfaces) != 0) return "";
+    std::string found;
+    for (ifaddrs* entry = interfaces; entry; entry = entry->ifa_next) {
+        if (!entry->ifa_addr || entry->ifa_addr->sa_family != AF_INET) continue;
+        char address[INET_ADDRSTRLEN] = {};
+        const auto* ipv4 = reinterpret_cast<const sockaddr_in*>(entry->ifa_addr);
+        inet_ntop(AF_INET, &ipv4->sin_addr, address, sizeof(address));
+        if (std::strncmp(address, subnet_prefix.c_str(), subnet_prefix.size()) == 0) {
+            found = address;
+            break;
+        }
+    }
+    freeifaddrs(interfaces);
+    return found;
 }
 
 Mid360* g_instance = nullptr;  // Livox callbacks are C function pointers, no user ptr on init.
@@ -66,8 +99,14 @@ Mid360::Mid360(Protocol& protocol) : protocol_(protocol) {}
 Mid360::~Mid360() { stop(); }
 
 std::string Mid360::write_config_file() {
-    const std::string host_ip = env_or("G1_LIDAR_HOST_IP", "192.168.1.5");
-    const std::string lidar_ip = env_or("G1_LIDAR_IP", "192.168.1.100");
+    const std::string lidar_ip = env_or("G1_LIDAR_IP", kDefaultLidarIp);
+    std::string host_ip = env_or("G1_LIDAR_HOST_IP", "");
+    if (host_ip.empty()) host_ip = detect_host_ip(lidar_ip);
+    if (host_ip.empty()) {
+        protocol_.error("mid360: no local interface on the lidar subnet (" + lidar_ip +
+                        "/24) — set G1_LIDAR_HOST_IP / G1_LIDAR_IP");
+        return "";
+    }
 
     // MID360 config schema expected by Livox-SDK2. Host receives point/imu data
     // on the *_data_port entries; the lidar listens on its own fixed ports.
@@ -101,35 +140,51 @@ std::string Mid360::write_config_file() {
 }
 
 bool Mid360::start() {
-    const std::string config_path = write_config_file();
-    if (config_path.empty()) {
-        protocol_.error("mid360: could not write lidar config");
-        return false;
-    }
     g_instance = this;
-
-    if (!LivoxLidarSdkInit(config_path.c_str())) {
-        protocol_.error("mid360: LivoxLidarSdkInit failed (check host/lidar IPs)");
-        g_instance = nullptr;
-        return false;
-    }
-    SetLivoxLidarPointCloudCallBack(point_cloud_callback, nullptr);
-    LivoxLidarSdkStart();
-
-    connected_.store(true);
     running_.store(true);
+    init_thread_ = std::thread(&Mid360::init_loop, this);
     emit_thread_ = std::thread(&Mid360::emit_loop, this);
-    protocol_.log("mid360 lidar up");
     return true;
+}
+
+// Keep trying to claim the lidar. Init fails while another Livox client (e.g.
+// a point-lio SLAM stack) holds the fixed UDP host ports; when it lets go, the
+// next attempt succeeds and we flip the panel's lidar status.
+void Mid360::init_loop() {
+    bool blocked_reported = false;
+    while (running_.load() && !connected_.load()) {
+        const std::string config_path = write_config_file();
+        if (config_path.empty()) return;
+        if (LivoxLidarSdkInit(config_path.c_str())) {
+            SetLivoxLidarPointCloudCallBack(point_cloud_callback, nullptr);
+            LivoxLidarSdkStart();
+            connected_.store(true);
+            protocol_.log("mid360 lidar up");
+            protocol_.emit({{"type", "status"}, {"lidar", true}});
+            return;
+        }
+        LivoxLidarSdkUninit();  // clear any half-initialized SDK state before retrying
+        if (!blocked_reported) {
+            blocked_reported = true;
+            protocol_.error(
+                "mid360: cannot claim the lidar — its Livox UDP ports are in use "
+                "(another client, e.g. point-lio, owns the MID360). Retrying quietly.");
+        }
+        for (int waited = 0; waited < kInitRetryDelay / std::chrono::seconds(1) &&
+                             running_.load(); ++waited) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+    }
 }
 
 void Mid360::stop() {
     running_.store(false);
+    if (init_thread_.joinable()) init_thread_.join();
     if (emit_thread_.joinable()) emit_thread_.join();
     if (connected_.exchange(false)) {
         LivoxLidarSdkUninit();
-        g_instance = nullptr;
     }
+    g_instance = nullptr;
 }
 
 void Mid360::ingest(const float* xyz, uint32_t point_count) {

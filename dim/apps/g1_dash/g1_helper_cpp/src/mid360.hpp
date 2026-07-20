@@ -7,8 +7,15 @@
 //
 // Network config: the SDK needs a JSON describing the host/lidar IPs and ports.
 // We generate it at start() from env vars so no file has to be shipped:
-//   G1_LIDAR_HOST_IP  the Jetson's IP on the lidar subnet   (default 192.168.1.5)
-//   G1_LIDAR_IP       the MID360's IP                        (default 192.168.1.100)
+//   G1_LIDAR_IP       the MID360's IP            (default 192.168.123.120, the G1 stock address)
+//   G1_LIDAR_HOST_IP  the Jetson's IP on the lidar subnet (default: auto-detected
+//                     from the local interface sharing the lidar's /24)
+//
+// EXCLUSIVITY: the Livox-SDK2 binds fixed UDP host ports (56000 detection +
+// 56101/56201/56301/56401 data), so only ONE process per host can own the
+// MID360 — if a SLAM stack (e.g. point-lio) is running, init fails. We retry
+// every few seconds in the background and pick the lidar up whenever the other
+// client releases it.
 #pragma once
 
 #include <array>
@@ -40,6 +47,7 @@ public:
 
 private:
     void emit_loop();
+    void init_loop();
     std::string write_config_file();
 
     Protocol& protocol_;
@@ -47,6 +55,7 @@ private:
     std::atomic<bool> running_{false};
     std::atomic<bool> streaming_{true};
     std::thread emit_thread_;
+    std::thread init_thread_;
 
     std::mutex points_mutex_;
     std::vector<std::array<float, 3>> points_;  // capped, cleared each emit

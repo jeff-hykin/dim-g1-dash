@@ -44,10 +44,18 @@ hand-managed hashes. `nlohmann_json` and `libjpeg_turbo` come from nixpkgs.
 | Var | Default | Meaning |
 | --- | --- | --- |
 | `G1_NET_IFACE` | `eth0` | Interface the unitree DDS transport binds to |
-| `G1_LIDAR_HOST_IP` | `192.168.1.5` | Jetson IP on the MID360 subnet |
-| `G1_LIDAR_IP` | `192.168.1.100` | MID360's IP |
+| `G1_LIDAR_IP` | `192.168.123.120` | MID360's IP (G1 stock address) |
+| `G1_LIDAR_HOST_IP` | auto | Jetson IP on the lidar subnet (auto: local IP sharing the lidar's /24) |
 | `G1_CAM_DEVICE` | auto | V4L2 node to stream (else first YUYV/MJPG-capable one) |
 | `G1_CAM_PORT` | `8190` | Port for the MJPEG HTTP stream |
+| `G1_CAM_WIDTH` × `G1_CAM_HEIGHT` | `848`×`480` | Capture size — keep 16:9 for the full FOV (4:3 center-crops) |
+
+**MID360 exclusivity:** the Livox-SDK2 binds fixed UDP host ports (56000
+detection + 56101/56201/56301/56401 data), so only **one process per host** can
+own the lidar. If a SLAM stack (e.g. point-lio) is running, this helper can't
+claim it — it reports the conflict once and retries every 10 s, picking the
+lidar up when the other client exits. The reverse also holds: while this helper
+owns the MID360, other Livox clients on this host can't.
 
 The MID360 network config JSON is generated from those at startup — nothing to
 ship or hand-edit.

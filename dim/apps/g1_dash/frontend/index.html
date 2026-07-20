@@ -470,6 +470,7 @@ els.estop.onclick = () => { dimApp.send("estop", {}); toast("E-STOP — damping"
 
 // ── status / link rendering ──
 function setSub(el, up) {
+  if (typeof up !== "boolean") return // partial status event — leave the dot as-is
   el.classList.toggle("up", up === true)
   el.classList.toggle("down", up === false)
 }
@@ -558,8 +559,8 @@ function onG1(msg) {
       if (typeof msg.ready === "boolean") { helperReady = msg.ready; renderLink() }
       if (msg.status) renderStatus(msg.status)
       if (msg.state) renderState(msg.state)
-      // helper's own status event: { unitree, lidar, camera, iface }
-      if ("unitree" in msg) renderStatus(msg)
+      // helper's own status event — may be partial (e.g. lidar claimed late)
+      if ("unitree" in msg || "lidar" in msg || "camera" in msg) renderStatus(msg)
       break
     case "ready": helperReady = true; renderLink(); break
     case "state": renderState(msg); break

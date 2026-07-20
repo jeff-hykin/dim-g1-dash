@@ -51,6 +51,7 @@ private:
 
     Protocol& protocol_;
     int port_ = 0;
+    uint32_t requested_width_ = 0, requested_height_ = 0;
 
     std::atomic<bool> running_{false};
     std::atomic<bool> streaming_{true};

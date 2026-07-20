@@ -22,8 +22,11 @@ namespace g1 {
 namespace {
 
 constexpr int kDefaultPort = 8190;
-constexpr uint32_t kWidth = 640;
-constexpr uint32_t kHeight = 480;
+// 16:9 uses the RealSense color sensor's full field of view — 4:3 modes
+// (e.g. 640x480) are a center-crop that visibly narrows the FOV. 848x480
+// keeps the full width at the same 60 fps rate as 640x480.
+constexpr uint32_t kDefaultWidth = 848;
+constexpr uint32_t kDefaultHeight = 480;
 constexpr uint32_t kBufferCount = 4;
 constexpr int kJpegQuality = 80;
 constexpr auto kRetryDelay = std::chrono::seconds(5);
@@ -81,6 +84,10 @@ bool send_all(int fd, const void* data, size_t size) {
 
 Webcam::Webcam(Protocol& protocol) : protocol_(protocol) {
     port_ = std::atoi(env_or("G1_CAM_PORT", std::to_string(kDefaultPort)).c_str());
+    requested_width_ = static_cast<uint32_t>(
+        std::atoi(env_or("G1_CAM_WIDTH", std::to_string(kDefaultWidth)).c_str()));
+    requested_height_ = static_cast<uint32_t>(
+        std::atoi(env_or("G1_CAM_HEIGHT", std::to_string(kDefaultHeight)).c_str()));
 }
 
 Webcam::~Webcam() { stop(); }
@@ -167,8 +174,8 @@ bool Webcam::open_device(const std::string& path) {
 
     v4l2_format format{};
     format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    format.fmt.pix.width = kWidth;
-    format.fmt.pix.height = kHeight;
+    format.fmt.pix.width = requested_width_;
+    format.fmt.pix.height = requested_height_;
     format.fmt.pix.pixelformat = V4L2_PIX_FMT_YUYV;
     format.fmt.pix.field = V4L2_FIELD_NONE;
     if (xioctl(device_fd_, VIDIOC_S_FMT, &format) != 0) {

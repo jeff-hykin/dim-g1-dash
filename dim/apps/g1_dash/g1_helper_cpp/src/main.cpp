@@ -50,13 +50,13 @@ int main(int argc, char** argv) {
     g1::Webcam camera(protocol);
 
     const bool unitree_ok = unitree.start();
-    const bool lidar_ok = lidar.start();
+    lidar.start();  // claims the lidar in the background — retries while it's owned elsewhere
     const bool camera_ok = camera.start();
 
     protocol.emit({
         {"type", "status"},
         {"unitree", unitree_ok},
-        {"lidar", lidar_ok},
+        {"lidar", lidar.connected()},
         {"camera", camera_ok},
         {"camPort", camera.port()},
         {"iface", network_interface},
