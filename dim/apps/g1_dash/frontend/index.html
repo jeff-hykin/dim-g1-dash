@@ -30,6 +30,8 @@
     justify-content: center; gap: 12px; color: var(--muted-fg); font-size: 13px; text-align: center; padding: 24px; }
   .cam-wrap.live .cam-ph { display: none; }
   .cam-ph .glyph { font-size: 46px; opacity: .4; }
+  .cam-ph .ph-connect { pointer-events: auto; font-size: 13px; padding: 10px 18px; }
+  .cam-ph .ph-connect:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
   /* multi-line explainer (off-robot / no-nix guidance) */
   .cam-ph .note-block { max-width: 560px; text-align: left; line-height: 1.6; font-size: 13px;
     color: rgba(255,255,255,.85); }
@@ -92,8 +94,13 @@
   .estop:hover { background: var(--danger); }
   .estop:active { transform: translateY(1px) scale(.98); }
 
-  /* ── left telemetry rail ── */
-  .rail { position: absolute; left: 14px; top: 64px; z-index: 8; width: 226px;
+  /* ── left column: telemetry rail above the lidar card ──
+     One flex column owns the vertical space so the two can never overlap:
+     the lidar card keeps its height and the rail takes what's left (scrolling
+     if the viewport is short). */
+  .left-col { position: absolute; left: 14px; top: 64px; bottom: 14px; z-index: 8; width: 260px;
+    display: flex; flex-direction: column; gap: 10px; }
+  .rail { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin;
     display: flex; flex-direction: column; gap: 10px; }
   .card { background: color-mix(in oklch, #0c1017 74%, transparent); backdrop-filter: blur(7px);
     border: 1px solid color-mix(in oklch, white 12%, transparent); border-radius: calc(var(--radius) * 1.3);
@@ -119,10 +126,10 @@
   .horizon .yaw { position: absolute; left: 0; right: 0; bottom: 3px; text-align: center;
     font-family: var(--mono); font-size: 10px; color: rgba(255,255,255,.75); text-shadow: 0 1px 2px #000; }
 
-  /* ── lidar point-cloud card (bottom-left, above rail overflow) ── */
-  .lidar-card { position: absolute; left: 14px; bottom: 14px; z-index: 8; width: 260px; height: 210px;
-    padding: 0; overflow: hidden; }
-  .lidar-card.big { width: min(60vw, 720px); height: min(64vh, 560px); }
+  /* ── lidar point-cloud card (bottom of the left column) ── */
+  .lidar-card { flex: 0 0 210px; padding: 0; overflow: hidden; }
+  /* expanded: grows right over the camera; the rail scrolls in what's left */
+  .lidar-card.big { flex: 0 0 min(64vh, 560px); width: min(60vw, 720px); }
   .lidar-card canvas { display: block; width: 100% !important; height: 100% !important; }
   .lidar-head { position: absolute; top: 0; left: 0; right: 0; z-index: 2; display: flex; align-items: center;
     gap: 8px; padding: 8px 10px; pointer-events: none;
@@ -262,6 +269,7 @@
       <div class="cam-ph" id="cam-ph">
         <div class="glyph">◉</div>
         <div id="cam-ph-text">Waiting for the onboard helper…</div>
+        <button class="act good ph-connect" id="cam-connect" style="display:none">Connect camera</button>
       </div>
     </div>
     <div class="vignette"></div>
@@ -292,6 +300,7 @@
       <button class="estop" id="estop" title="Zero velocity + Damp (Space)">E-STOP</button>
     </div>
 
+    <div class="left-col">
     <div class="rail">
       <div class="card">
         <h3>Robot</h3>
@@ -336,6 +345,7 @@
         <button class="expand" id="lidar-expand" style="margin-left:6px">Expand</button>
       </div>
       <canvas id="lidar-canvas"></canvas>
+    </div>
     </div>
 
     <div class="vel" id="vel">
@@ -433,6 +443,7 @@ const els = {
   camWrap: document.getElementById("cam-wrap"),
   cam: document.getElementById("cam"),
   camPhText: document.getElementById("cam-ph-text"),
+  camConnect: document.getElementById("cam-connect"),
   link: document.getElementById("link"), linkT: document.getElementById("link-t"),
   sUnitree: document.getElementById("s-unitree"),
   sLidar: document.getElementById("s-lidar"),
@@ -462,10 +473,17 @@ let remoteMode = false    // on the robot LAN but not the Jetson (laptop plugged
 let remoteCamUrl = null   // viewing the robot's own MJPEG stream instead of a local camera
 let backendNote = null    // backend-reported blocker (e.g. nix missing on this machine)
 
-// Single writer for the center placeholder. The off-robot / no-nix explainers
-// out-rank every transient stream message — a dead camera isn't the story then.
+// Single writer for the center placeholder (text + its optional action button).
+// The off-robot / no-nix explainers out-rank every transient stream message —
+// a dead camera isn't the story then.
+function showPlaceholderButton(label, action) {
+  els.camConnect.textContent = label
+  els.camConnect.onclick = action
+  els.camConnect.style.display = ""
+}
 function updateCamPlaceholder(streamMessage) {
   if (els.camWrap.classList.contains("live")) return
+  els.camConnect.style.display = "none"
   if (onboard === false) {
     els.camPhText.innerHTML = `<div class="note-block">
       <p><b>This machine doesn't look like the G1.</b> There's no network interface on the
@@ -486,20 +504,24 @@ function updateCamPlaceholder(streamMessage) {
     els.camPhText.querySelector("p:last-child").textContent = backendNote
     return
   }
-  if (streamMessage) { els.camPhText.textContent = streamMessage; return }
+  if (streamMessage) {
+    els.camPhText.textContent = streamMessage
+    if (remoteCamUrl) showPlaceholderButton("Retry robot stream", useRobotStream)
+    return
+  }
   if (remoteMode && helperReady && !camDesired && !remoteCamUrl) {
     els.camPhText.innerHTML = `<div class="note-block">
       <p><b>Remote session</b> — this machine is on the robot's LAN but isn't the robot itself.
       Driving, telemetry and the MID360 all work from here; the RealSense is attached to the robot.</p>
-      <p>If the robot is also running G1 Dash, press <code>/</code> and run
-      <b>View robot's onboard camera stream</b>.</p>
+      <p>If the robot is also running G1 Dash, view its camera feed:</p>
     </div>`
+    showPlaceholderButton("View robot's camera stream", useRobotStream)
     return
   }
   if (!helperReady) { els.camPhText.textContent = "Waiting for the onboard helper…"; return }
-  els.camPhText.textContent = camDesired
-    ? "Connecting to camera stream…"
-    : "Camera not connected — click the RS chip (or press / → Connect camera)"
+  if (camDesired) { els.camPhText.textContent = "Connecting to camera stream…"; return }
+  els.camPhText.textContent = "Camera not connected"
+  showPlaceholderButton("Connect camera", toggleCamera)
 }
 
 // ── toast ──
