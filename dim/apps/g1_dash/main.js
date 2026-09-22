@@ -172,6 +172,71 @@ async function startLcmBridge() {
     }
 }
 
+// The RealSense on a stock G1 is held from boot by Unitree's `videohub_pc4`,
+// and killing it is not enough: `master_service` respawns it within about a
+// second, which makes a kill-only takeover look like it did nothing. So stop
+// the supervisor first, then kill the child, then re-ask for the camera — the
+// helper's own retry loop wins the device from there.
+//
+// On the G1's Jetson master_service supervises only the two videohubs and the
+// OTA pipe. The loco service lives on the robot's other board and is reached
+// over DDS, so none of this can move the robot.
+//
+// Restore the robot's video with: sudo systemctl start master_service
+//
+// This needs three narrowly-scoped sudoers rules, in
+// /etc/sudoers.d/dim-g1-dash-camera:
+//
+//   unitree ALL=(root) NOPASSWD: /usr/bin/systemctl stop master_service
+//   unitree ALL=(root) NOPASSWD: /usr/bin/systemctl start master_service
+//   unitree ALL=(root) NOPASSWD: /usr/bin/pkill -x videohub_pc4
+//
+// -x matches the process name exactly, which matters: the chest camera runs as
+// `videohub_pc4_chest`, and Linux truncates comm to 15 characters, so it reads
+// as `videohub_pc4_ch` and a substring match would take it down too.
+const VIDEOHUB_NAME = "videohub_pc4"
+const VIDEOHUB_SUPERVISOR = "master_service"
+
+async function run(command, args) {
+    try {
+        const { code } = await new Deno.Command(command, { args, stdout: "null", stderr: "null" }).output()
+        return code
+    } catch {
+        return null // not on this machine
+    }
+}
+
+async function videohubRunning() {
+    return (await run("pgrep", ["-x", VIDEOHUB_NAME])) === 0
+}
+
+async function forceCameraTakeover() {
+    const note = (msg, level = "info") => dimApp.send("g1", { type: level === "error" ? "error" : "log", level, msg })
+
+    // Stop the respawner before the process it respawns, or the kill is undone
+    // before the helper can open the device.
+    await run("sudo", ["-n", "systemctl", "stop", VIDEOHUB_SUPERVISOR])
+    // pkill exits 0 when it *matched*, even when the signal was refused, so an
+    // unprivileged run against this root process looks like success. Ask whether
+    // the process actually died instead of believing the exit code.
+    for (const attempt of [["pkill", ["-x", VIDEOHUB_NAME]], ["sudo", ["-n", "pkill", "-x", VIDEOHUB_NAME]]]) {
+        if (!(await videohubRunning())) break
+        await run(attempt[0], attempt[1])
+        await new Promise((resolve) => setTimeout(resolve, 500))
+    }
+
+    if (await videohubRunning()) {
+        note(
+            `camera takeover: ${VIDEOHUB_NAME} is still running — it belongs to root. Add the ` +
+                `rules from this file's comment to /etc/sudoers.d/dim-g1-dash-camera on the robot.`,
+            "error",
+        )
+        return
+    }
+    note(`camera takeover: stopped ${VIDEOHUB_NAME} (restore video with: sudo systemctl start ${VIDEOHUB_SUPERVISOR})`)
+    sendToHelper({ type: "config", camera: true })
+}
+
 dimApp.onReceive((kind, payload) => {
     if (kind === "move") {
         sendToHelper({ type: "move", vx: payload?.vx || 0, vy: payload?.vy || 0, omega: payload?.omega || 0 })
@@ -182,6 +247,8 @@ dimApp.onReceive((kind, payload) => {
         sendToHelper({ type: "estop" })
     } else if (kind === "config") {
         sendToHelper({ type: "config", ...(payload || {}) })
+    } else if (kind === "camera_takeover") {
+        forceCameraTakeover()
     } else if (kind === "hello") {
         pushStatus() // bring a freshly-opened panel up to date
     }

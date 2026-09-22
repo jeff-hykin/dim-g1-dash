@@ -17,6 +17,24 @@ talks straight to its hardware:
   chips (or the lidar card's Connect button, or the `/` palette) claims or
   releases them for other programs — e.g. Unitree's videohub holds the camera
   and a point-lio SLAM stack holds the lidar.
+- **Force takeover camera** — on a stock G1 the RealSense is held from boot by
+  Unitree's `videohub_pc4`, so Connect just sits at "Connecting to camera
+  stream…" forever. The amber **Force takeover camera** button frees it. Killing
+  videohub alone is not enough — `master_service` respawns it within a second —
+  so the backend stops that supervisor first, then the process, then re-asks for
+  the camera. On the Jetson `master_service` supervises only the two videohubs
+  and the OTA pipe, so nothing about the robot's motion is touched. Put the
+  robot's own video back with `sudo systemctl start master_service`.
+
+  It needs three narrowly-scoped rules in `/etc/sudoers.d/dim-g1-dash-camera`:
+
+  ```
+  unitree ALL=(root) NOPASSWD: /usr/bin/systemctl stop master_service
+  unitree ALL=(root) NOPASSWD: /usr/bin/systemctl start master_service
+  unitree ALL=(root) NOPASSWD: /usr/bin/pkill -x videohub_pc4
+  ```
+
+  Without them the button reports what to add instead of failing silently.
 - **Telemetry** — battery percentage, loco controller FSM + resident motion
   service, IMU attitude (roll/pitch/yaw with an artificial horizon), hottest
   joint temperature, and nearest-obstacle proximity.
@@ -73,13 +91,15 @@ standalone **C++ helper** (`g1_helper_cpp`) that owns all three and speaks
 newline-JSON over stdio. The dashboard relays that to/from the browser panel over
 the app-bus; drive and gait commands flow back down the same pipe.
 
-No dimos venv is required — `nix` builds the helper on first launch (compiling the
-robot SDKs; cached thereafter). If a dimos LCM bridge happens to be running
-alongside, the backend also forwards its streams to the panel.
+A **prebuilt helper ships with the app** (`g1_helper_cpp/bin/g1_helper-<os>-<arch>`),
+so the robot compiles nothing. Platforms with no prebuilt fall back to `nix run`,
+which builds the SDKs on first launch and takes several minutes. No dimos venv is
+required either way. If a dimos LCM bridge happens to be running alongside, the
+backend also forwards its streams to the panel.
 
 ```
-browser panel  ⇄  main.js (Deno)  ⇄  g1_helper (C++, nix)  ⇄  MID360 · RealSense · G1
-     app-bus            stdio (newline-JSON)                    Livox · rs2 · unitree_sdk2
+browser panel  ⇄  main.js (Deno)  ⇄  g1_helper (C++)  ⇄  MID360 · RealSense · G1
+     app-bus            stdio (newline-JSON)              Livox · rs2 · unitree_sdk2
 ```
 
 ## Install
@@ -88,14 +108,15 @@ browser panel  ⇄  main.js (Deno)  ⇄  g1_helper (C++, nix)  ⇄  MID360 · Re
 dim install https://github.com/jeff-hykin/dim-g1-dash
 ```
 
-The app appears in the dashboard rail within a few seconds. The **first** launch
-compiles the robot SDKs under Nix and can take several minutes — watch the
-dashboard logs for build progress; it's cached after that.
+The app appears in the dashboard rail within a few seconds. On the G1's aarch64
+Jetson the shipped prebuilt helper starts immediately. Anywhere without a prebuilt,
+the first launch compiles the robot SDKs under Nix and takes several minutes —
+watch the dashboard logs for build progress; it's cached after that.
 
 ### Requirements
 
 - Runs on the G1's onboard computer (aarch64 Jetson) — also builds on x86_64 Linux.
-- `nix` with flakes enabled (the helper is built via `nix run`).
+- `nix` with flakes enabled **only** where no prebuilt is shipped for the platform.
 - The MID360, RealSense, and G1 DDS interface reachable on the network
   (see the env-var knobs in [`dim/apps/g1_dash/g1_helper_cpp/README.md`](dim/apps/g1_dash/g1_helper_cpp/README.md)).
 
@@ -107,9 +128,11 @@ dim/apps/g1_dash/
   frontend/
     index.html        the panel — camera, 3D lidar (three.js), telemetry, controls
     icon.svg          rail icon (humanoid)
-  main.js             backend — nix-runs the C++ helper, relays over the app-bus
+  main.js             backend — runs the C++ helper, relays over the app-bus
   g1_helper_cpp/      C++ helper — MID360 + RealSense + unitree_sdk2, JSON over stdio
-    flake.nix         builds it (SDKs pinned as flake inputs), run via nix
+    bin/              shipped prebuilts, preferred over building
+    build_prebuilt.sh regenerates them in an Ubuntu 20.04 container
+    flake.nix         the fallback build (SDKs pinned as flake inputs), run via nix
     CMakeLists.txt
     src/              protocol, unitree_bridge, mid360, webcam, main
 ```

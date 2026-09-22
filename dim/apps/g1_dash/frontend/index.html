@@ -181,6 +181,11 @@
     background-color: color-mix(in oklch, #ff2626 22%, color-mix(in oklch, black 28%, transparent)); }
   .act.bad.active-mode { background-color: color-mix(in oklch, #ff2626 34%, transparent);
     border-color: #ff5b4d; color: #fff; }
+  /* one-click but consequential — takes a device off another service */
+  .act.warn { border-color: color-mix(in oklch, #ffb300 62%, transparent); color: #ffc94d;
+    background-color: color-mix(in oklch, #ffb300 12%, color-mix(in oklch, black 44%, transparent)); }
+  .act.warn:hover { border-color: #ffc93d; color: #ffd978;
+    background-color: color-mix(in oklch, #ffb300 22%, color-mix(in oklch, black 28%, transparent)); }
   /* greyed out: this command needs a mode the robot isn't in (title says which) */
   .act:disabled { opacity: .38; cursor: not-allowed; }
   .act:disabled:hover { background-color: color-mix(in oklch, black 44%, transparent); border-color: color-mix(in oklch, white 16%, transparent); }
@@ -562,9 +567,11 @@ let backendNote = null    // backend-reported blocker (e.g. nix missing on this 
 // Single writer for the center placeholder (text + its optional action button).
 // The off-robot / no-nix explainers out-rank every transient stream message —
 // a dead camera isn't the story then.
-function showPlaceholderButton(label, action) {
+function showPlaceholderButton(label, action, { variant = "good", title = "" } = {}) {
   els.camConnect.textContent = label
   els.camConnect.onclick = action
+  els.camConnect.className = `act ${variant} ph-connect`
+  els.camConnect.title = title
   els.camConnect.style.display = ""
 }
 function updateCamPlaceholder(streamMessage) {
@@ -605,7 +612,18 @@ function updateCamPlaceholder(streamMessage) {
     return
   }
   if (!helperReady) { els.camPhText.textContent = "Waiting for the onboard helper…"; return }
-  if (camDesired) { els.camPhText.textContent = "Connecting to camera stream…"; return }
+  if (camDesired) {
+    els.camPhText.textContent = "Connecting to camera stream…"
+    // The usual reason this never resolves is that a stock G1 boots Unitree's
+    // videohub holding the RealSense, and the helper can only retry quietly.
+    showPlaceholderButton("Force takeover camera", forceTakeoverCamera, {
+      variant: "warn",
+      title: "Stops the robot's videohub service so the dash can open the RealSense. " +
+        "Anything else using that camera — the Unitree app included — loses video until you run " +
+        "`sudo systemctl start master_service` on the robot. The robot does not move.",
+    })
+    return
+  }
   els.camPhText.textContent = "Camera not connected"
   showPlaceholderButton("Connect camera", toggleCamera)
 }
@@ -729,6 +747,18 @@ function updateToggleLabels() {
     ? "Camera claimed by the dash — click to release it for other apps"
     : "Camera released — click to connect"
 }
+// Free the camera by force: on a stock G1 the RealSense is held from boot by
+// Unitree's videohub, which nothing in the dash can out-wait. The backend kills
+// that process and re-asks for the camera; the helper's own retry loop does the
+// rest. No confirmation modal — the button is amber and says what it does on
+// hover, and nothing here moves the robot.
+function forceTakeoverCamera() {
+  camDesired = true
+  dimApp.send("camera_takeover", {})
+  toast("Taking the camera over…")
+  updateCamPlaceholder("Stopping the robot's video service…")
+}
+
 function toggleCamera() {
   camDesired = !camDesired
   if (camDesired) remoteCamUrl = null // local camera takes over from a robot stream
@@ -777,6 +807,13 @@ function renderStatus(status) {
     camPort = status.camPort
     connectCamera()
   }
+  // connectCamera() needs BOTH camPort and camDesired, and the status that first
+  // reports the camera connected may arrive before the one carrying the port —
+  // or the panel may simply have been opened onto an already-connected camera,
+  // in which case no transition ever fires. Re-attempt while the stream isn't
+  // live yet; the "live" guard keeps this from restarting a running stream on
+  // every status tick.
+  if (status.camera === true && !els.camWrap.classList.contains("live")) connectCamera()
 }
 function renderLink() {
   if (!helperReady) {
@@ -794,9 +831,13 @@ function renderLink() {
 // (helper restart, camera busy) — the helper side also retries the device.
 let camRetryTimer = null
 function connectCamera() {
-  if (!camPort || !camDesired) return
+  if (!camDesired) return
+  // The helper's default MJPEG port, used until a status event names one. Waiting
+  // for camPort meant a panel opened onto an already-connected camera could sit
+  // at "Connecting…" forever if the status carrying the port never arrived after
+  // the one saying the camera was up.
   clearTimeout(camRetryTimer)
-  els.cam.src = `http://${location.hostname}:${camPort}/stream?t=${Date.now()}`
+  els.cam.src = `http://${location.hostname}:${camPort || 8190}/stream?t=${Date.now()}`
 }
 els.cam.onload = () => { els.camWrap.classList.add("live") }
 els.cam.onerror = () => {
