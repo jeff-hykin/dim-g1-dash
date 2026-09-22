@@ -2,8 +2,9 @@
 
 The native half of **dim-g1-dash**. It runs *on the G1's Jetson* and talks to the
 robot's three hardware interfaces, then multiplexes everything over a simple
-newline-JSON protocol on stdio. The Deno backend (`../main.js`) launches it with
-`nix run` and relays that protocol to/from the browser panel over the app-bus.
+newline-JSON protocol on stdio. The Deno backend (`../main.js`) launches the
+prebuilt binary in `bin/` (falling back to `nix run`) and relays that protocol
+to/from the browser panel over the app-bus.
 
 ```
 stdin  (commands)              stdout (telemetry, one JSON object per line)
@@ -29,7 +30,32 @@ seconds until it gets it.
 
 ## Build / run
 
-Everything is built by Nix — no system packages, no manual SDK installs:
+`../main.js` prefers a **prebuilt binary** shipped in `bin/`, named
+`g1_helper-<os>-<arch>` (matching Deno's `Deno.build.os`/`arch`) — so the robot
+never pays the first-launch compile. Today we ship `linux-aarch64` (the G1's
+Jetson). Any platform without a shipped binary falls back to `nix run`.
+
+The prebuilt links its own turbojpeg, Livox and unitree_sdk2 statically, but
+CycloneDDS is distributed by unitree as `.so` only, so `libddsc.so.0` and
+`libddscxx.so.0` ride along in `bin/lib-linux-aarch64/` and are found through
+the binary's `$ORIGIN` rpath. Beyond those it needs nothing but glibc (2.18 and
+older symbols — the Jetson has 2.31).
+
+To rebuild it (needs Docker with `linux/arm64`, i.e. an Apple Silicon Mac or any
+aarch64 Linux box):
+
+```sh
+./build_prebuilt.sh   # ~3 min; writes bin/g1_helper-linux-aarch64 + bin/lib-linux-aarch64/
+```
+
+It builds inside an **Ubuntu 20.04 arm64 container** rather than with Nix,
+because nixpkgs-unstable's glibc is far newer than the Jetson's — a Nix-built
+binary only runs through the Nix store. The container matches the robot's distro
+and glibc exactly, and runs at native speed on Apple Silicon. Keep the SDK
+revisions in that script in sync with `flake.lock`.
+
+For development, everything is still built by Nix — no system packages, no
+manual SDK installs:
 
 ```sh
 nix run   # first run compiles the SDKs (minutes); cached after

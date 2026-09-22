@@ -32,6 +32,23 @@ let lastState = null
 // panel instead of an eternal "waiting for the onboard helper".
 let backendNote = null
 
+// Prefer a prebuilt helper binary shipped with the app, so the robot never pays
+// the `nix run` compile (several minutes on the Jetson — it builds both robot
+// SDKs). We ship one binary per os-arch under ./g1_helper_cpp/bin, each with its
+// bundled CycloneDDS libs beside it in bin/lib-<os>-<arch>/ (found through the
+// binary's $ORIGIN rpath). Anything not shipped falls back to `nix run` below.
+let cachedPrebuiltBin
+async function resolvePrebuiltBin() {
+    if (cachedPrebuiltBin !== undefined) return cachedPrebuiltBin
+    const path = `${HELPER_DIR}/bin/g1_helper-${Deno.build.os}-${Deno.build.arch}`
+    try {
+        const info = await Deno.stat(path)
+        if (info.isFile) { cachedPrebuiltBin = path; return path }
+    } catch { /* not shipped for this platform — fall back to nix */ }
+    cachedPrebuiltBin = null
+    return null
+}
+
 // Find the `nix` binary. A GUI-launched dashboard may not inherit the shell PATH
 // that has nix on it, so fall back to the usual install locations.
 let cachedNixBin
@@ -66,28 +83,41 @@ function pushStatus() {
 }
 
 async function start() {
-    const nix = await resolveNixBin()
-    if (!nix) {
-        helperReady = false
-        backendNote = "`nix` was not found on this machine, so the onboard C++ helper can't be built. " +
-            "G1 Dash is meant to run on the G1's own Jetson — install the dim dashboard there and " +
-            "`dim install` this app on the robot. (Or install nix here if this really is the robot.)"
-        pushStatus()
-        console.error("g1_dash: `nix` not found on PATH — cannot build the G1 helper")
-        setTimeout(start, RESTART_MS)
-        return
-    }
+    // Prefer the shipped prebuilt binary (instant); else `nix run` (compiles on
+    // first launch). Both speak the same newline-JSON stdio protocol, so
+    // everything below — the stdout event loop, the restart loop — is identical.
+    const prebuilt = await resolvePrebuiltBin()
     backendNote = null
+    let cmd, args
+    if (prebuilt) {
+        cmd = prebuilt
+        args = []
+    } else {
+        const nix = await resolveNixBin()
+        if (!nix) {
+            helperReady = false
+            backendNote = "No prebuilt helper for this platform and `nix` was not found on this machine, " +
+                "so the onboard C++ helper can't be built. " +
+                "G1 Dash is meant to run on the G1's own Jetson — install the dim dashboard there and " +
+                "`dim install` this app on the robot. (Or install nix here if this really is the robot.)"
+            pushStatus()
+            console.error("g1_dash: no prebuilt helper for this platform and `nix` not found on PATH")
+            setTimeout(start, RESTART_MS)
+            return
+        }
+        cmd = nix
+        args = [
+            "run",
+            "--extra-experimental-features", "nix-command flakes",
+            `path:${HELPER_DIR}`,
+        ]
+    }
     try {
-        // `nix run` builds the helper on first launch (cached thereafter), then
-        // execs it with stdio forwarded. The first build compiles the robot SDKs
-        // and can take several minutes; the child stays alive during it.
-        child = new Deno.Command(nix, {
-            args: [
-                "run",
-                "--extra-experimental-features", "nix-command flakes",
-                `path:${HELPER_DIR}`,
-            ],
+        // With a prebuilt binary this execs instantly. With `nix run` the first
+        // launch builds the helper (cached thereafter); that compiles the robot
+        // SDKs and can take several minutes, and the child stays alive during it.
+        child = new Deno.Command(cmd, {
+            args,
             stdin: "piped",
             stdout: "piped",
             stderr: "inherit", // surface nix build progress + helper logs in dashboard logs
