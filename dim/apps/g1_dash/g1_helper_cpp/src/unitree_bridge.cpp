@@ -8,6 +8,7 @@
 #include <unitree/robot/channel/channel_factory.hpp>
 #include <unitree/robot/channel/channel_publisher.hpp>
 #include <unitree/robot/channel/channel_subscriber.hpp>
+#include <unitree/robot/g1/arm/g1_arm_action_client.hpp>
 #include <unitree/robot/g1/loco/g1_loco_client.hpp>
 #include <unitree/idl/hg/BmsState_.hpp>
 #include <unitree/idl/hg/LowState_.hpp>
@@ -21,6 +22,7 @@ using BmsStateMsg = unitree_hg::msg::dds_::BmsState_;
 using WirelessMsg = unitree_go::msg::dds_::WirelessController_;
 using LocoClient = unitree::robot::g1::LocoClient;
 using MotionSwitcherClient = unitree::robot::b2::MotionSwitcherClient;
+using ArmActionClient = unitree::robot::g1::G1ArmActionClient;
 using LowStateSubscriber = unitree::robot::ChannelSubscriber<LowStateMsg>;
 using BmsSubscriber = unitree::robot::ChannelSubscriber<BmsStateMsg>;
 using WirelessPublisher = unitree::robot::ChannelPublisher<WirelessMsg>;
@@ -30,6 +32,17 @@ constexpr char kBmsTopic[] = "rt/lf/bmsstate";
 constexpr char kWirelessTopic[] = "rt/wirelesscontroller";
 constexpr float kLocoTimeoutSec = 10.0f;
 constexpr float kSwitcherTimeoutSec = 10.0f;
+constexpr float kArmActionTimeoutSec = 10.0f;
+// Gestures come from the arm-action service, NOT LocoClient::WaveHand/ShakeHand
+// — those go through SetTaskId, which this firmware accepts (returns 0) and then
+// ignores: measured against rt/lowstate, task ids 0-3 move the joints by 0.0002
+// rad, i.e. nothing, and 4+ return 7303. The ids below are the robot's own, read
+// back from GetActionList; ExecuteAction(26) moves 0.31 rad and (27) 0.99 rad.
+constexpr int kArmWave = 26;         // wave_above_head
+constexpr int kArmTurnBackWave = 1;  // turn_back_wave — the list marks it fsm [500, 501]
+constexpr int kArmShakeHand = 27;    // shake_hand
+// Actions hold their last keyframe when they finish; 99 puts the arms back.
+constexpr int kArmRelease = 99;
 // Re-issue the held velocity at 20 Hz; each SetVelocity carries a slightly longer
 // duration so a dropped tick doesn't stutter the gait.
 constexpr auto kControlPeriod = std::chrono::milliseconds(50);
@@ -108,6 +121,11 @@ bool UnitreeBridge::start() {
     switcher->Init();
     motion_switcher_ = switcher;
 
+    auto* arm = new ArmActionClient();
+    arm->SetTimeout(kArmActionTimeoutSec);
+    arm->Init();
+    arm_action_ = arm;
+
     auto* wireless = new WirelessPublisher(kWirelessTopic);
     wireless->InitChannel();
     wireless_publisher_ = wireless;
@@ -137,6 +155,10 @@ void UnitreeBridge::stop() {
     if (motion_switcher_) {
         delete static_cast<MotionSwitcherClient*>(motion_switcher_);
         motion_switcher_ = nullptr;
+    }
+    if (arm_action_) {
+        delete static_cast<ArmActionClient*>(arm_action_);
+        arm_action_ = nullptr;
     }
     if (wireless_publisher_) {
         delete static_cast<WirelessPublisher*>(wireless_publisher_);
@@ -206,9 +228,10 @@ bool UnitreeBridge::command(const std::string& name, const std::string& gait) {
         else if (name == "balancestand") code = client->BalanceStand();
         else if (name == "highstand") code = client->HighStand();
         else if (name == "lowstand") code = client->LowStand();
-        else if (name == "wavehand") code = client->WaveHand(false);
-        else if (name == "waveturn") code = client->WaveHand(true);
-        else if (name == "shakehand") code = client->ShakeHand();
+        else if (name == "wavehand") code = arm_action(kArmWave);
+        else if (name == "waveturn") code = arm_action(kArmTurnBackWave);
+        else if (name == "shakehand") code = arm_action(kArmShakeHand);
+        else if (name == "releasearm") code = arm_action(kArmRelease);
         else {
             protocol_.error("unknown command: " + name);
             return false;
@@ -305,6 +328,13 @@ bool UnitreeBridge::run_fsm_step(const std::string& step, int fsm_id) {
     }
     emit_seq(step, aborted() ? "aborted" : "timeout");
     return false;
+}
+
+// Gestures are their own service, so a missing client is a refusal rather than a
+// crash — the helper stays useful for driving even if this one failed to come up.
+int32_t UnitreeBridge::arm_action(int action_id) {
+    if (!arm_action_) return -1;
+    return static_cast<ArmActionClient*>(arm_action_)->ExecuteAction(action_id);
 }
 
 void UnitreeBridge::press_combo(uint16_t keys, double seconds) {

@@ -69,6 +69,7 @@ private:
     bool engage_advanced();
     bool ensure_ai_mode();
     bool set_gait(const std::string& gait);
+    int32_t arm_action(int action_id);
     void press_combo(uint16_t keys, double seconds);
     int query_fsm_id();
     int query_balance_mode();
@@ -83,6 +84,7 @@ private:
     // unitree_sdk2 includes (they pull in DDS headers project-wide otherwise).
     void* loco_client_ = nullptr;
     void* motion_switcher_ = nullptr;
+    void* arm_action_ = nullptr;
     void* wireless_publisher_ = nullptr;
     void* low_state_subscriber_ = nullptr;
     void* bms_subscriber_ = nullptr;

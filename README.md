@@ -66,6 +66,15 @@ so it's the robot's own answer, not what we last asked for.
 | `collapse` | damped: joints limp, the robot rests on whatever holds it |
 | `limp` | zero torque, motors fully off |
 
+Gestures (Wave, Shake, Wave + Turn) go through the robot's **arm-action
+service**, not `LocoClient`'s `WaveHand`/`ShakeHand`. Those two call `SetTaskId`,
+which this firmware accepts and then ignores — measured against `rt/lowstate`,
+task ids 0-3 return 0 and move the joints by 0.0002 rad, i.e. nothing. The action
+ids used here (`26 wave_above_head`, `27 shake_hand`, `1 turn_back_wave`) come
+from the robot's own `GetActionList`. An action holds its last keyframe when it
+finishes, so **Release Arms** (`99 release_arm`, in the `/` palette) puts the arms
+back.
+
 Actions that need a particular mode (Wave, Shake, High/Low Stand — and driving)
 grey out when the robot isn't in one, and their tooltip says which modes do
 work, e.g. *"Wave — needs mode: walk, primitive_walk, stand — robot is in

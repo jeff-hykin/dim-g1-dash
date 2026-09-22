@@ -523,6 +523,10 @@ const COMMANDS = [
     cls: "", seq: true, danger: "amber", advanced: true,
     warn: "Same as <b>Primitive Walk (slow)</b> but with longer, faster strides. The robot takes torque control — make sure it is on a gantry or on flat ground with clear space around it." },
   { name: "waveturn",  label: "Wave + Turn", cls: "", advanced: true, requires: BALANCING_MODES },
+  // Arm actions hold their last keyframe when they finish, so the arms stay
+  // posed until something puts them back. That something is action 99.
+  { name: "releasearm", label: "Release Arms", cls: "", advanced: true, requires: BALANCING_MODES,
+    hint: "return the arms to their neutral pose after a gesture" },
   { name: "highstand", label: "High Stand",  cls: "", advanced: true, requires: BALANCING_MODES,
     hint: "raises the standing height" },
   { name: "lowstand",  label: "Low Stand",   cls: "", advanced: true, requires: BALANCING_MODES,
