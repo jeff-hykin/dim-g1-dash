@@ -12,6 +12,8 @@
 #include <netinet/tcp.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <chrono>
+
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <turbojpeg.h>
@@ -29,6 +31,21 @@ constexpr uint32_t kDefaultWidth = 848;
 constexpr uint32_t kDefaultHeight = 480;
 constexpr uint32_t kBufferCount = 4;
 constexpr int kJpegQuality = 80;
+// Backpressure. The old sender always picked the newest frame, so nothing
+// queued in userspace — but send_all() blocks until the whole frame is in the
+// socket buffer, and TCP then delivers every byte of it in order. A default
+// SO_SNDBUF holds several frames, so a slow link means watching old frames
+// drain: latency grows without bound and no frame is ever skipped. Cap the
+// buffer to about one frame, and skip a frame outright when the socket still
+// has an unsent backlog, so what arrives is always near-live.
+constexpr int kClientSendBufBytes = 128 * 1024;
+constexpr int kBacklogSkipBytes = 48 * 1024;
+// Adaptive quality bounds, used when the panel asks for quality 0 (auto).
+constexpr int kMinAutoQuality = 25;
+constexpr int kMaxAutoQuality = 80;
+constexpr double kDropRateEasy = 0.05;  // below this, walk the quality back up
+constexpr double kDropRateHard = 0.20;  // above this, back the quality off
+constexpr auto kQualityReviewPeriod = std::chrono::seconds(2);
 constexpr auto kRetryDelay = std::chrono::seconds(5);
 constexpr int kMaxDeviceIndex = 15;
 // select() timeout on the capture fd — a stuck device falls back to retry.
@@ -69,6 +86,19 @@ void yuyv_to_rgb(const uint8_t* yuyv, uint8_t* rgb, uint32_t width, uint32_t hei
     }
 }
 
+int64_t now_ms() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+               std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
+// Bytes the kernel still has to put on the wire for this socket. That backlog
+// IS the latency the viewer sees, so it is what decides whether to skip.
+int unsent_bytes(int fd) {
+    int pending = 0;
+    if (ioctl(fd, TIOCOUTQ, &pending) != 0) return 0;
+    return pending;
+}
+
 bool send_all(int fd, const void* data, size_t size) {
     const char* cursor = static_cast<const char*>(data);
     while (size > 0) {
@@ -83,6 +113,7 @@ bool send_all(int fd, const void* data, size_t size) {
 }  // namespace
 
 Webcam::Webcam(Protocol& protocol) : protocol_(protocol) {
+    effective_quality_.store(kJpegQuality);
     port_ = std::atoi(env_or("G1_CAM_PORT", std::to_string(kDefaultPort)).c_str());
     requested_width_ = static_cast<uint32_t>(
         std::atoi(env_or("G1_CAM_WIDTH", std::to_string(kDefaultWidth)).c_str()));
@@ -276,10 +307,19 @@ void Webcam::close_device() {
     }
 }
 
+void Webcam::set_quality(int quality) {
+    // 0 means "adapt"; anything else pins the encoder where the panel put it.
+    requested_quality_.store(quality);
+    effective_quality_.store(quality > 0 ? std::clamp(quality, 5, 95) : kMaxAutoQuality);
+}
+
+void Webcam::set_max_fps(int fps) { max_fps_.store(std::max(0, fps)); }
+
 void Webcam::publish_jpeg(const uint8_t* data, size_t size) {
     {
         std::lock_guard<std::mutex> guard(frame_mutex_);
         latest_jpeg_.assign(data, data + size);
+        frame_stamp_ms_ = now_ms();
         ++frame_seq_;
     }
     frame_cv_.notify_all();
@@ -308,7 +348,7 @@ bool Webcam::capture_frame() {
             unsigned long jpeg_size = 0;
             if (tjCompress2(static_cast<tjhandle>(jpeg_compressor_), rgb_scratch_.data(),
                             static_cast<int>(width_), 0, static_cast<int>(height_),
-                            TJPF_RGB, &jpeg, &jpeg_size, TJSAMP_420, kJpegQuality,
+                            TJPF_RGB, &jpeg, &jpeg_size, TJSAMP_420, effective_quality_.load(),
                             TJFLAG_FASTDCT) == 0) {
                 publish_jpeg(jpeg, jpeg_size);
             }
@@ -366,6 +406,10 @@ void Webcam::server_loop() {
         }
         const int nodelay = 1;
         setsockopt(client_fd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
+        // A default-sized send buffer hoards several frames, and every one of
+        // them has to reach the viewer before the newest does.
+        const int sndbuf = kClientSendBufBytes;
+        setsockopt(client_fd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
         std::thread(&Webcam::client_loop, this, client_fd).detach();
     }
 }
@@ -379,6 +423,12 @@ void Webcam::client_loop(int client_fd) {
         "HTTP/1.0 200 OK\r\n"
         "Cache-Control: no-store\r\n"
         "Connection: close\r\n"
+        // The panel is served from the dashboard's port and the stream from
+        // this one, so fetch() sees a cross-origin request even on the same
+        // host. An <img> would not care; the parser does, and it is the parser
+        // that can measure and drop frames.
+        "Access-Control-Allow-Origin: *\r\n"
+        "Access-Control-Expose-Headers: X-Timestamp\r\n"
         "Content-Type: multipart/x-mixed-replace; boundary=frame\r\n\r\n";
     if (!send_all(client_fd, header, std::strlen(header))) {
         close(client_fd);
@@ -386,7 +436,11 @@ void Webcam::client_loop(int client_fd) {
     }
 
     uint64_t last_seq = 0;
+    int64_t stamp_ms = 0;
     std::vector<uint8_t> frame;
+    uint64_t sent = 0, dropped = 0;
+    auto next_review = std::chrono::steady_clock::now() + kQualityReviewPeriod;
+    int64_t last_sent_ms = 0;
     while (running_.load()) {
         {
             std::unique_lock<std::mutex> lock(frame_mutex_);
@@ -394,15 +448,57 @@ void Webcam::client_loop(int client_fd) {
                                [&] { return frame_seq_ != last_seq || !running_.load(); });
             if (frame_seq_ == last_seq) continue;  // timeout tick — re-check running_
             last_seq = frame_seq_;
+            stamp_ms = frame_stamp_ms_;
             frame = latest_jpeg_;
         }
+
+        // An fps cap is the cheapest way to cut bandwidth when the panel asks.
+        const int fps_cap = max_fps_.load();
+        if (fps_cap > 0) {
+            const int64_t min_gap = 1000 / fps_cap;
+            if (stamp_ms - last_sent_ms < min_gap) continue;
+        }
+
+        // Skip rather than queue: if the kernel is still draining the previous
+        // frame, sending this one only pushes the viewer further into the past.
+        // Skipping between parts keeps the multipart stream well-formed.
+        if (unsent_bytes(client_fd) > kBacklogSkipBytes) {
+            ++dropped;
+            frames_dropped_.fetch_add(1);
+            continue;
+        }
+
+        // The viewer can't see part headers from an <img>, but it can when it
+        // parses the stream itself — which is how the panel measures latency.
         const std::string part_header =
-            "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: " +
+            "--frame\r\nContent-Type: image/jpeg\r\nX-Timestamp: " +
+            std::to_string(stamp_ms) + "\r\nContent-Length: " +
             std::to_string(frame.size()) + "\r\n\r\n";
         if (!send_all(client_fd, part_header.data(), part_header.size()) ||
             !send_all(client_fd, frame.data(), frame.size()) ||
             !send_all(client_fd, "\r\n", 2)) {
             break;
+        }
+        ++sent;
+        frames_sent_.fetch_add(1);
+        last_sent_ms = stamp_ms;
+
+        // Adapt only when the panel left quality on auto. Drops are the signal:
+        // they mean the encoder is producing more than the link can carry.
+        if (requested_quality_.load() == 0 && std::chrono::steady_clock::now() >= next_review) {
+            const uint64_t total = sent + dropped;
+            if (total > 0) {
+                const double drop_rate = static_cast<double>(dropped) / static_cast<double>(total);
+                int quality = effective_quality_.load();
+                if (drop_rate > kDropRateHard) {
+                    quality = std::max(kMinAutoQuality, quality - 10);
+                } else if (drop_rate < kDropRateEasy) {
+                    quality = std::min(kMaxAutoQuality, quality + 5);
+                }
+                effective_quality_.store(quality);
+            }
+            sent = dropped = 0;
+            next_review = std::chrono::steady_clock::now() + kQualityReviewPeriod;
         }
     }
     close(client_fd);

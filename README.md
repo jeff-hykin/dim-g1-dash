@@ -10,6 +10,17 @@ talks straight to its hardware:
 - **Live camera** — the onboard RealSense color node, read via plain Linux V4L2
   (no librealsense, so other consumers keep the depth/IR nodes) and served as an
   MJPEG video stream the panel plays directly.
+  The stream is backpressure-aware in both directions. The sender caps its
+  socket buffer to about one frame and skips a frame whenever the socket still
+  has an unsent backlog, so what arrives is near-live instead of a queue draining
+  in order — that queue, not userspace, was the whole of the original lag. It
+  also adapts JPEG quality to its own drop rate. Each part carries an
+  `X-Timestamp`, and the panel parses the stream itself rather than handing it to
+  an `<img>`: it decodes only the newest frame, shows **camera fps** and **camera
+  lag** in the Health card, and asks the robot for 10 fps when lag stays above
+  500 ms (releasing the cap once it drops back under 200 ms). Lag is measured
+  against the smallest clock offset ever observed, so it reads as queueing delay
+  rather than absolute glass-to-glass.
 - **3D lidar** — the MID360 (Livox) point cloud, accumulated over ~4 s and
   rendered live with three.js (pre-flipped for the G1's upside-down mount).
 - **Connect/disconnect** — camera and lidar are exclusive-access devices, so

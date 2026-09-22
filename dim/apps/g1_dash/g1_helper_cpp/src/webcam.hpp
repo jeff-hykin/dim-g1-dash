@@ -39,6 +39,16 @@ public:
     // stream resumes when re-enabled.
     void set_enabled(bool enabled);
 
+    // Backpressure controls, driven from the panel. Quality 0 means "adapt":
+    // the sender lowers it while frames are being dropped and restores it when
+    // the link keeps up. max_fps 0 means uncapped.
+    void set_quality(int quality);
+    void set_max_fps(int fps);
+    int quality() const { return effective_quality_.load(); }
+    int max_fps() const { return max_fps_.load(); }
+    uint64_t frames_sent() const { return frames_sent_.load(); }
+    uint64_t frames_dropped() const { return frames_dropped_.load(); }
+
     bool connected() const { return connected_.load(); }
     bool enabled() const { return desired_.load(); }
     int port() const { return port_; }
@@ -74,11 +84,21 @@ private:
     void* jpeg_compressor_ = nullptr;  // tjhandle
     std::vector<uint8_t> rgb_scratch_;
 
+    // Quality is the knob the sender turns under backpressure: requested_quality_
+    // is what the panel asked for (0 = let the helper decide) and
+    // effective_quality_ is what the encoder is actually using right now.
+    std::atomic<int> requested_quality_{0};
+    std::atomic<int> effective_quality_{0};
+    std::atomic<int> max_fps_{0};
+    std::atomic<uint64_t> frames_sent_{0};
+    std::atomic<uint64_t> frames_dropped_{0};
+
     // Latest encoded frame, shared with the per-client sender threads.
     std::mutex frame_mutex_;
     std::condition_variable frame_cv_;
     std::vector<uint8_t> latest_jpeg_;
     uint64_t frame_seq_ = 0;
+    int64_t frame_stamp_ms_ = 0;  // when the newest frame was encoded
 
     int server_fd_ = -1;
 };

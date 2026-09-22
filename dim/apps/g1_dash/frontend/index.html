@@ -31,8 +31,9 @@
   /* Fill the stage rather than sitting at the stream's own 848x480 in the middle
      of it — max-* alone caps the image but never grows it. contain keeps the
      whole frame visible, which matters when you are driving off it. */
-  #cam { width: 100%; height: 100%; object-fit: contain; display: none; image-rendering: auto; }
-  .cam-wrap.live #cam { display: block; }
+  #cam, #cam-canvas { width: 100%; height: 100%; object-fit: contain; display: none; image-rendering: auto; }
+  .cam-wrap.live.via-img #cam { display: block; }
+  .cam-wrap.live.via-canvas #cam-canvas { display: block; }
   .cam-ph { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
     justify-content: center; gap: 12px; color: var(--muted-fg); font-size: 13px; text-align: center; padding: 24px; }
   .cam-wrap.live .cam-ph { display: none; }
@@ -308,6 +309,7 @@
   <div class="stage">
     <div class="cam-wrap" id="cam-wrap">
       <img id="cam" alt="G1 camera" />
+      <canvas id="cam-canvas"></canvas>
       <div class="cam-ph" id="cam-ph">
         <div class="glyph">◉</div>
         <div id="cam-ph-text">Waiting for the onboard helper…</div>
@@ -372,6 +374,8 @@
           <span class="k">hottest joint</span><span class="v" id="v-temp">—</span>
           <span class="k">nearest obst.</span><span class="v" id="v-near">—</span>
           <span class="k">lidar pts/s</span><span class="v" id="v-pts">—</span>
+          <span class="k">camera fps</span><span class="v" id="v-fps">—</span>
+          <span class="k">camera lag</span><span class="v" id="v-lag">—</span>
         </div>
       </div>
     </div>
@@ -539,6 +543,7 @@ for (const [key, mode] of Object.entries(MODES)) for (const fsm of mode.fsms) FS
 const els = {
   camWrap: document.getElementById("cam-wrap"),
   cam: document.getElementById("cam"),
+  camCanvas: document.getElementById("cam-canvas"),
   camPhText: document.getElementById("cam-ph-text"),
   camConnect: document.getElementById("cam-connect"),
   link: document.getElementById("link"), linkT: document.getElementById("link-t"),
@@ -552,6 +557,7 @@ const els = {
   horizonSky: document.getElementById("horizon-sky"), horizonYaw: document.getElementById("horizon-yaw"),
   vRoll: document.getElementById("v-roll"), vPitch: document.getElementById("v-pitch"),
   vTemp: document.getElementById("v-temp"), vNear: document.getElementById("v-near"),
+  vFps: document.getElementById("v-fps"), vLag: document.getElementById("v-lag"),
   vPts: document.getElementById("v-pts"),
   batt: document.getElementById("batt"), battT: document.getElementById("batt-t"),
   lidarCard: document.getElementById("lidar-card"), lidarExpand: document.getElementById("lidar-expand"),
@@ -837,16 +843,175 @@ function renderLink() {
 // per-frame websocket traffic. Retry with a cache-buster if the stream drops
 // (helper restart, camera busy) — the helper side also retries the device.
 let camRetryTimer = null
+// The panel parses the MJPEG stream itself instead of handing the URL to an
+// <img>. Three things need that:
+//   * measuring anything — an <img> exposes neither frame times nor a frame
+//     count, so "camera fps" and "camera lag" are unanswerable from one
+//   * dropping on the viewer side — decode only the newest frame that arrived,
+//     so a slow decode falls behind by discarding rather than by queueing
+//   * X-Timestamp, which the helper puts in each part header and which is what
+//     makes lag measurable at all
+// The <img> path stays for the robot's own stream, which is cross-origin and
+// cannot be fetched.
+let camAbort = null
+let camPendingFrame = null       // newest undecoded frame; older ones are dropped
+let camDecoding = false
+let camFrameTimes = []           // draw times, for fps over a moving second
+let camLagMs = null              // smoothed, relative to the best offset seen
+let camClockOffset = null        // browser clock - robot clock, estimated as the minimum
+let camLagHighSince = null
+let camThrottled = false
+
+function stopCamStream() {
+  if (camAbort) { camAbort.abort(); camAbort = null }
+  camPendingFrame = null
+  camDecoding = false
+  camFrameTimes = []
+  camLagMs = null
+  camLagHighSince = null
+  els.camWrap.classList.remove("live", "via-img", "via-canvas")
+}
+
+function renderCamStats() {
+  els.vFps.textContent = camFrameTimes.length ? `${camFrameTimes.length}` : "—"
+  if (camLagMs === null) {
+    els.vLag.textContent = "—"
+    els.vLag.className = "v"
+    return
+  }
+  els.vLag.textContent = `${Math.round(camLagMs)} ms`
+  els.vLag.className = "v" + (camLagMs > 500 ? " hot" : "")
+}
+
+// Ask the backend to ease off when the viewer is behind, and to let go again
+// when it catches up. The helper also adapts on its own (it can see its socket
+// backlog); this is the half only the viewer can judge.
+function nudgeCamBackpressure() {
+  if (camLagMs === null) return
+  const now = performance.now()
+  if (camLagMs > 500) {
+    if (camLagHighSince === null) camLagHighSince = now
+    if (!camThrottled && now - camLagHighSince > 3000) {
+      camThrottled = true
+      dimApp.send("config", { camMaxFps: 10 })
+      toast("Camera lagging — asked the robot for 10 fps")
+    }
+  } else {
+    camLagHighSince = null
+    if (camThrottled && camLagMs < 200) {
+      camThrottled = false
+      dimApp.send("config", { camMaxFps: 0 })
+      toast("Camera caught up — frame rate uncapped")
+    }
+  }
+}
+
+async function drawPendingFrame() {
+  if (camDecoding || !camPendingFrame) return
+  camDecoding = true
+  while (camPendingFrame) {
+    const { bytes, stamp } = camPendingFrame
+    camPendingFrame = null            // anything newer replaces this, never queues
+    try {
+      const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/jpeg" }))
+      const canvas = els.camCanvas
+      if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+        canvas.width = bitmap.width
+        canvas.height = bitmap.height
+      }
+      canvas.getContext("2d").drawImage(bitmap, 0, 0)
+      bitmap.close()
+      if (!els.camWrap.classList.contains("live")) {
+        els.camWrap.classList.add("live", "via-canvas")
+        updateCamPlaceholder()
+      }
+      const now = Date.now()
+      camFrameTimes.push(now)
+      while (camFrameTimes.length && now - camFrameTimes[0] > 1000) camFrameTimes.shift()
+      if (stamp) {
+        // The robot's clock and this one are not synchronised, so the raw
+        // difference is offset by an unknown constant. The smallest difference
+        // ever seen is the best estimate of that constant, which makes what is
+        // left the queueing delay — the part that actually moves.
+        const raw = now - stamp
+        if (camClockOffset === null || raw < camClockOffset) camClockOffset = raw
+        const lag = raw - camClockOffset
+        camLagMs = camLagMs === null ? lag : camLagMs * 0.8 + lag * 0.2
+      }
+      renderCamStats()
+      nudgeCamBackpressure()
+    } catch (error) {
+      // A corrupt part is not worth killing the stream over.
+    }
+  }
+  camDecoding = false
+}
+
+function indexOfBytes(haystack, needle, from) {
+  outer: for (let i = from; i <= haystack.length - needle.length; i++) {
+    for (let j = 0; j < needle.length; j++) if (haystack[i + j] !== needle[j]) continue outer
+    return i
+  }
+  return -1
+}
+
+async function streamCamera(url) {
+  camAbort = new AbortController()
+  const response = await fetch(url, { signal: camAbort.signal, cache: "no-store" })
+  if (!response.ok || !response.body) throw new Error(`stream HTTP ${response.status}`)
+  const reader = response.body.getReader()
+  const encoder = new TextEncoder()
+  const headerEnd = encoder.encode("\r\n\r\n")
+  let buffer = new Uint8Array(0)
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    const merged = new Uint8Array(buffer.length + value.length)
+    merged.set(buffer, 0)
+    merged.set(value, buffer.length)
+    buffer = merged
+    for (;;) {
+      const headerAt = indexOfBytes(buffer, headerEnd, 0)
+      if (headerAt < 0) break
+      const headerText = new TextDecoder().decode(buffer.subarray(0, headerAt))
+      const lengthMatch = /content-length:\s*(\d+)/i.exec(headerText)
+      if (!lengthMatch) { buffer = buffer.subarray(headerAt + headerEnd.length); continue }
+      const length = Number(lengthMatch[1])
+      const bodyAt = headerAt + headerEnd.length
+      if (buffer.length < bodyAt + length) break     // wait for the rest
+      const stampMatch = /x-timestamp:\s*(\d+)/i.exec(headerText)
+      camPendingFrame = {
+        bytes: buffer.slice(bodyAt, bodyAt + length),
+        stamp: stampMatch ? Number(stampMatch[1]) : 0,
+      }
+      buffer = buffer.subarray(bodyAt + length)
+      drawPendingFrame()
+    }
+  }
+}
+
 function connectCamera() {
   if (!camDesired) return
-  // The helper's default MJPEG port, used until a status event names one. Waiting
-  // for camPort meant a panel opened onto an already-connected camera could sit
-  // at "Connecting…" forever if the status carrying the port never arrived after
-  // the one saying the camera was up.
   clearTimeout(camRetryTimer)
-  els.cam.src = `http://${location.hostname}:${camPort || 8190}/stream?t=${Date.now()}`
+  stopCamStream()
+  // The robot's own stream is another origin, so fetch() can't read it — that
+  // one keeps the <img>, and loses the fps/lag readout with it.
+  if (remoteCamUrl) {
+    els.camWrap.classList.add("via-img")
+    els.cam.src = `${remoteCamUrl}?t=${Date.now()}`
+    return
+  }
+  // The helper's default MJPEG port, used until a status event names one.
+  const url = `http://${location.hostname}:${camPort || 8190}/stream?t=${Date.now()}`
+  streamCamera(url).catch((error) => {
+    if (error?.name === "AbortError" || !camDesired) return
+    els.camWrap.classList.remove("live", "via-canvas")
+    updateCamPlaceholder("Camera stream offline — retrying… (device busy or unplugged)")
+    clearTimeout(camRetryTimer)
+    camRetryTimer = setTimeout(connectCamera, 3000)
+  })
 }
-els.cam.onload = () => { els.camWrap.classList.add("live") }
+els.cam.onload = () => { els.camWrap.classList.add("live", "via-img") }
 els.cam.onerror = () => {
   els.camWrap.classList.remove("live")
   if (remoteCamUrl) {

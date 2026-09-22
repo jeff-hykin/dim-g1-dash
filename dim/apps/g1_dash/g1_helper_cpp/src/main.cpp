@@ -88,6 +88,8 @@ int main(int argc, char** argv) {
         {"camera", camera.connected()},
         {"camWanted", camera.enabled()},
         {"camPort", camera.port()},
+        {"camQuality", camera.quality()},
+        {"camMaxFps", camera.max_fps()},
         {"iface", network_interface},
     });
     protocol.emit({{"type", "ready"}});
@@ -114,6 +116,11 @@ int main(int argc, char** argv) {
             unitree.estop();
         } else if (type == "config") {
             if (message.contains("camera")) camera.set_enabled(message["camera"].get<bool>());
+            // Backwards channel for the stream: the panel can pin the JPEG
+            // quality (0 = let the helper adapt to the link) and cap the frame
+            // rate when the link is the bottleneck rather than the encoder.
+            if (message.contains("camQuality")) camera.set_quality(message["camQuality"].get<int>());
+            if (message.contains("camMaxFps")) camera.set_max_fps(message["camMaxFps"].get<int>());
             if (message.contains("lidar")) lidar.set_enabled(message["lidar"].get<bool>());
         }
     }
