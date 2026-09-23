@@ -136,6 +136,32 @@
   /* hide everything but the header (the lidar head holds its own header) */
   .card.collapsed > *:not(h3):not(.lidar-head) { display: none; }
 
+  /* ── speed sliders ──
+     Wide tracks and 22px thumbs: this card lives in the phone drawer too, where
+     a desktop-sized thumb is unmissable but untappable. */
+  .speed { display: flex; flex-direction: column; gap: 3px; }
+  .speed label { font-size: 11px; color: var(--muted-fg); display: flex; justify-content: space-between;
+    align-items: baseline; gap: 8px; }
+  .speed label .v { font-family: var(--mono); font-size: 12px; color: #fff; }
+  .speed input[type=range] { appearance: none; -webkit-appearance: none; width: 100%; height: 22px;
+    margin: 0 0 5px; background: transparent; cursor: pointer; touch-action: pan-y; }
+  .speed input[type=range]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px;
+    background: color-mix(in oklch, white 16%, transparent); }
+  .speed input[type=range]::-moz-range-track { height: 4px; border-radius: 2px;
+    background: color-mix(in oklch, white 16%, transparent); }
+  .speed input[type=range]::-webkit-slider-thumb { appearance: none; -webkit-appearance: none;
+    width: 18px; height: 18px; margin-top: -7px; border-radius: 50%; background: var(--primary);
+    border: 2px solid color-mix(in oklch, black 55%, transparent); }
+  .speed input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%;
+    background: var(--primary); border: 2px solid color-mix(in oklch, black 55%, transparent); }
+  .speed-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    font-size: 10px; color: var(--muted-fg); }
+  .speed-foot button { appearance: none; font: inherit; color: var(--muted-fg); cursor: pointer;
+    background: none; border: 0; padding: 0; text-decoration: underline; }
+  .speed-foot button:hover { color: #fff; }
+  /* a non-default speed should be obvious before you press forward */
+  .speed.tuned label .v { color: #ffb02e; }
+
   .kv { display: grid; grid-template-columns: 1fr auto; gap: 3px 8px; font-size: 12px; }
   .kv .k { color: var(--muted-fg); }
   .kv .v { font-family: var(--mono); color: #fff; text-align: right; }
@@ -429,6 +455,20 @@
     <div class="left-col">
     <div class="rail">
       <div class="card">
+        <h3>Speed</h3>
+        <div class="speed">
+          <label for="sp-vx">linear <span class="v" id="sp-vx-v">—</span></label>
+          <input type="range" id="sp-vx" min="0.1" max="1.2" step="0.05" />
+          <label for="sp-omega">turn <span class="v" id="sp-omega-v">—</span></label>
+          <input type="range" id="sp-omega" min="0.2" max="2.5" step="0.05" />
+          <div class="speed-foot">
+            <span>Shift boosts &times;1.6</span>
+            <button type="button" id="sp-reset">reset</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
         <h3>Robot</h3>
         <div class="kv">
           <span class="k">controller</span><span class="v" id="v-loco">—</span>
@@ -532,9 +572,14 @@ import { OrbitControls } from "https://esm.sh/three@0.160.0/examples/jsm/control
 const dimApp = new DimAppFrontend()
 
 // ── drive tuning ──
-const MAX_VX = 0.6      // m/s forward
-const MAX_VY = 0.4      // m/s strafe
-const MAX_OMEGA = 0.9   // rad/s yaw
+// Full-stick speeds, live-editable from the SPEED card. Strafe is not its own
+// slider: it tracks forward at the ratio the two constants always had, so one
+// number still means "how fast this thing translates".
+const DRIVE_DEFAULTS = { vx: 0.6, omega: 1.5 }   // m/s forward, rad/s yaw
+const DRIVE_LIMITS = { vx: [0.1, 1.2], omega: [0.2, 2.5] }
+const VY_RATIO = 0.4 / 0.6   // strafe as a fraction of forward
+const DRIVE_STORE = "g1dash.drive"
+const drive = { ...DRIVE_DEFAULTS }
 const BOOST = 1.6       // Shift multiplier
 const SEND_HZ = 15      // move-command rate while driving
 
@@ -669,6 +714,10 @@ const els = {
   poseCanvas: document.getElementById("pose-canvas"),
   poseM: document.getElementById("pose-m"),
   poseExpand: document.getElementById("pose-expand"),
+  speed: document.querySelector(".speed"),
+  spVx: document.getElementById("sp-vx"), spVxV: document.getElementById("sp-vx-v"),
+  spOmega: document.getElementById("sp-omega"), spOmegaV: document.getElementById("sp-omega-v"),
+  spReset: document.getElementById("sp-reset"),
   panelsBtn: document.getElementById("panels-btn"),
   leftCol: document.querySelector(".left-col"),
   scrim: document.getElementById("scrim"),
@@ -1709,6 +1758,36 @@ els.poseExpand.onclick = () => {
     requestAnimationFrame(() => { resizePose(); renderPose() })
 }
 
+// ── speed card ──
+// The sliders own `drive`, which computeVel() reads every tick, so a change
+// takes effect mid-press without restarting the drive loop. Stored per browser:
+// the phone and the laptop are usually driving from different distances.
+function clampDrive(key, n) {
+  const [lo, hi] = DRIVE_LIMITS[key]
+  return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : DRIVE_DEFAULTS[key]
+}
+function showDrive() {
+  els.spVx.value = drive.vx; els.spOmega.value = drive.omega
+  els.spVxV.textContent = `${drive.vx.toFixed(2)} m/s`
+  els.spOmegaV.textContent = `${drive.omega.toFixed(2)} rad/s`
+  const tuned = drive.vx !== DRIVE_DEFAULTS.vx || drive.omega !== DRIVE_DEFAULTS.omega
+  els.speed.classList.toggle("tuned", tuned)
+}
+function setDrive(key, n, persist = true) {
+  drive[key] = clampDrive(key, n)
+  showDrive()
+  if (persist) { try { localStorage.setItem(DRIVE_STORE, JSON.stringify(drive)) } catch {} }
+  if (driving()) showVel(computeVel())   // the readout is live while a key is held
+}
+try {
+  const saved = JSON.parse(localStorage.getItem(DRIVE_STORE) || "{}")
+  drive.vx = clampDrive("vx", saved.vx); drive.omega = clampDrive("omega", saved.omega)
+} catch {}
+els.spVx.oninput = () => setDrive("vx", parseFloat(els.spVx.value))
+els.spOmega.oninput = () => setDrive("omega", parseFloat(els.spOmega.value))
+els.spReset.onclick = () => { setDrive("vx", DRIVE_DEFAULTS.vx); setDrive("omega", DRIVE_DEFAULTS.omega) }
+showDrive()
+
 // ── driving: keyboard + d-pad → throttled "move" ──
 const keys = { fwd: false, back: false, sl: false, sr: false, tl: false, tr: false, boost: false }
 let lastSent = { vx: 0, vy: 0, omega: 0 }
@@ -1719,7 +1798,7 @@ function computeVel() {
   let vx = (keys.fwd ? 1 : 0) - (keys.back ? 1 : 0)
   let vy = (keys.sl ? 1 : 0) - (keys.sr ? 1 : 0)
   let omega = (keys.tl ? 1 : 0) - (keys.tr ? 1 : 0)
-  return { vx: vx * MAX_VX * k, vy: vy * MAX_VY * k, omega: omega * MAX_OMEGA * k }
+  return { vx: vx * drive.vx * k, vy: vy * drive.vx * VY_RATIO * k, omega: omega * drive.omega * k }
 }
 function driving() { return keys.fwd || keys.back || keys.sl || keys.sr || keys.tl || keys.tr }
 function showVel(v) {
