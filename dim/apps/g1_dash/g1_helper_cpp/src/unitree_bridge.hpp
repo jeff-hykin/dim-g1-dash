@@ -69,6 +69,8 @@ private:
     bool engage_advanced();
     bool ensure_ai_mode();
     bool set_gait(const std::string& gait);
+    bool run_fsm_transition(const std::string& step, int fsm_id);
+    bool damp_if_limp();
     int32_t arm_action(int action_id);
     void press_combo(uint16_t keys, double seconds);
     int query_fsm_id();

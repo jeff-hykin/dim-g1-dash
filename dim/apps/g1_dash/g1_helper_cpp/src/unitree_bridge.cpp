@@ -58,11 +58,21 @@ constexpr auto kStatusPeriod = std::chrono::seconds(1);
 // ── g1_stand constants (see dimos bin/g1_stand for the provenance) ───────────
 // Controller equivalents: L2+B → damp (FSM 1), L2+Up → get-ready (FSM 4),
 // R2+A → advanced balance (FSM 801 entering, 802 active).
+constexpr int kFsmZeroTorque = 0;
 constexpr int kFsmDamp = 1;
+constexpr int kFsmSit = 3;
 constexpr int kFsmGetReady = 4;
 constexpr int kFsmBasicBalance = 200;
 constexpr int kFsmAdvancedEntry = 801;
 constexpr int kFsmAdvancedActive = 802;
+// The pinned C++ SDK predates these: it has no Lie2StandUp/Squat2StandUp, and
+// its Squat() is SetFsmId(2), which this firmware answers 0 to and then ignores
+// (verified — the reported FSM never leaves 802). The live ids are below, and
+// the python SDK agrees: it dropped Squat() entirely and exposes only 706.
+constexpr int kFsmLieToStand = 702;
+// One id for both directions: 706 toggles between standing and squatting, which
+// is why Squat2StandUp and StandUp2Squat are the same call in the python SDK.
+constexpr int kFsmSquatToggle = 706;
 // rt/wirelesscontroller key bits, as the physical remote sends them.
 constexpr uint16_t kKeyR2 = 1u << 4;
 constexpr uint16_t kKeyA = 1u << 8;
@@ -77,6 +87,20 @@ constexpr auto kStepPoll = std::chrono::seconds(1);
 // stompy gait; "ai" is the natural one.
 constexpr char kMotionMode[] = "ai";
 constexpr auto kModeTimeout = std::chrono::seconds(10);
+
+// Commands that move the FSM and therefore need confirming, not firing once.
+bool is_sequence_command(const std::string& name) {
+    return name == "stand" || name == "balance" || name == "advanced" ||
+           name == "ready" || name == "standup" || name == "squat" ||
+           name == "squat2standup" || name == "lie2standup" ||
+           name == "damp" || name == "zerotorque" || name == "sit";
+}
+
+// Letting go must never be refused because something else is mid-flight — these
+// are the way OUT of a stuck sequence, so they abort it instead of bouncing off.
+bool preempts_sequence(const std::string& name) {
+    return name == "damp" || name == "zerotorque";
+}
 
 int gait_to_balance_mode(const std::string& gait) {
     if (gait == "walk") return 1;
@@ -191,10 +215,18 @@ bool UnitreeBridge::command(const std::string& name, const std::string& gait) {
     auto* client = static_cast<LocoClient*>(loco_client_);
 
     // Engage sequences (translated from bin/g1_stand) run on their own thread.
-    if (name == "stand" || name == "balance" || name == "advanced") {
+    // Every posture that has to CHANGE the FSM belongs here: the loco service
+    // ignores SetFsmId while a transition is in flight and still answers 0, so
+    // a posture is only real once GetFsmId confirms it. That is the whole
+    // difference between bin/g1_stand (works) and a one-shot RPC (doesn't).
+    if (is_sequence_command(name)) {
         if (sequence_running_.load()) {
-            protocol_.error("a sequence is already running (" + sequence_name_ + ")");
-            return false;
+            if (!preempts_sequence(name)) {
+                protocol_.error("a sequence is already running (" + sequence_name_ + ")");
+                return false;
+            }
+            protocol_.log(name + ": aborting sequence '" + sequence_name_ + "'");
+            sequence_abort_.store(true);
         }
         set_velocity(0, 0, 0);
         if (sequence_thread_.joinable()) sequence_thread_.join();
@@ -220,12 +252,7 @@ bool UnitreeBridge::command(const std::string& name, const std::string& gait) {
     int32_t code = 0;
     try {
         std::lock_guard<std::mutex> rpc_guard(rpc_mutex_);
-        if (name == "damp") code = client->Damp();
-        else if (name == "ready" || name == "standup") code = client->StandUp();
-        else if (name == "squat") code = client->Squat();
-        else if (name == "sit") code = client->Sit();
-        else if (name == "zerotorque") code = client->ZeroTorque();
-        else if (name == "balancestand") code = client->BalanceStand();
+        if (name == "balancestand") code = client->BalanceStand();
         else if (name == "highstand") code = client->HighStand();
         else if (name == "lowstand") code = client->LowStand();
         else if (name == "wavehand") code = arm_action(kArmWave);
@@ -322,6 +349,59 @@ bool UnitreeBridge::run_fsm_step(const std::string& step, int fsm_id) {
         }
         std::this_thread::sleep_for(kStepPoll);
         if (query_fsm_id() == fsm_id) {
+            emit_seq(step, "ok");
+            return true;
+        }
+    }
+    emit_seq(step, aborted() ? "aborted" : "timeout");
+    return false;
+}
+
+// A damp is needed ONLY out of zero torque: with no controller running the loco
+// service takes a posture id, answers 0 and drops it. From ANY state where the
+// robot is holding itself up there is a controller to take the transition, and
+// damping first is not a precaution — it is a collapse. Squat pressed on a
+// standing robot damped it to the floor; that is what this guard exists for.
+bool UnitreeBridge::damp_if_limp() {
+    const int fsm = query_fsm_id();
+    if (fsm != kFsmZeroTorque) {
+        protocol_.log("damp: skipped, robot is under torque (FSM " +
+                      std::to_string(fsm) + ")");
+        return true;
+    }
+    return run_fsm_step("damp", kFsmDamp);
+}
+
+// 706 and 702 are transition ids, not resting states: the robot runs the move
+// and settles into whatever posture it reached, so GetFsmId never comes back
+// reporting them. run_fsm_step's re-send-until-confirmed loop is therefore
+// exactly wrong here — on a toggle like 706 it would crouch, stand, crouch,
+// stand for the whole timeout. Send once, then watch for the FSM to LEAVE the
+// damp/zero-torque pair, and report where it landed.
+bool UnitreeBridge::run_fsm_transition(const std::string& step, int fsm_id) {
+    emit_seq(step, "start");
+    const int start_fsm = query_fsm_id();
+    int code;
+    {
+        std::lock_guard<std::mutex> guard(rpc_mutex_);
+        code = static_cast<LocoClient*>(loco_client_)->SetFsmId(fsm_id);
+    }
+    if (code != 0) {
+        protocol_.error(step + ": SetFsmId(" + std::to_string(fsm_id) +
+                        ") failed (code=" + std::to_string(code) + ")");
+        emit_seq(step, "failed");
+        return false;
+    }
+    const auto deadline = std::chrono::steady_clock::now() + kStepTimeout;
+    while (!aborted() && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(kStepPoll);
+        const int fsm = query_fsm_id();
+        // Watch for a CHANGE from where we started, not merely "not damped":
+        // sent from a balancing robot the FSM is already 802, and calling that
+        // success would report a move that never happened.
+        if (fsm != start_fsm && fsm != -1) {
+            protocol_.log(step + ": FSM " + std::to_string(start_fsm) + " -> " +
+                          std::to_string(fsm));
             emit_seq(step, "ok");
             return true;
         }
@@ -437,10 +517,21 @@ void UnitreeBridge::run_sequence(std::string name, std::string gait) {
     if (name == "advanced") {
         // Just the R2+A emulation, assuming the robot is already in get-ready.
         ok = engage_advanced();
+    } else if (name == "damp") {
+        ok = run_fsm_step("damp", kFsmDamp);
+    } else if (name == "zerotorque") {
+        ok = run_fsm_step("zerotorque", kFsmZeroTorque);
+    } else if (name == "sit") {
+        ok = ensure_ai_mode() && damp_if_limp() && run_fsm_step("sit", kFsmSit);
+    } else if (name == "squat" || name == "squat2standup" || name == "lie2standup") {
+        const int target = (name == "lie2standup") ? kFsmLieToStand : kFsmSquatToggle;
+        ok = ensure_ai_mode() &&
+             damp_if_limp() &&
+             run_fsm_transition(name, target);
     } else {
         // Full flows: ai mode → damp → ready → (advanced | FSM 200 + gait).
         ok = ensure_ai_mode() &&
-             run_fsm_step("damp", kFsmDamp) &&
+             damp_if_limp() &&
              run_fsm_step("ready", kFsmGetReady);
         if (ok && name == "stand") ok = engage_advanced();
         if (ok && name == "balance") {
@@ -449,7 +540,15 @@ void UnitreeBridge::run_sequence(std::string name, std::string gait) {
     }
     {
         std::lock_guard<std::mutex> guard(mode_mutex_);
-        mode_ = ok ? (name == "balance" ? "balance" : "standing") : "unknown";
+        // Postures land wherever the robot ended up; the 1 Hz loco poll names it.
+        mode_ = ok ? (name == "balance" ? "balance"
+                      : name == "damp" ? "damp"
+                      : name == "zerotorque" ? "zerotorque"
+                      : name == "sit" ? "sit"
+                      : name == "squat" || name == "squat2standup" ? "squat"
+                      : name == "ready" || name == "standup" ? "stiffen"
+                      : "standing")
+                   : "unknown";
     }
     emit_seq("sequence", ok ? "done" : "failed");
     sequence_running_.store(false);
