@@ -149,6 +149,15 @@
     font-family: var(--mono); font-size: 10px; color: rgba(255,255,255,.75); text-shadow: 0 1px 2px #000; }
 
   /* ── lidar point-cloud card (bottom of the left column) ── */
+  .pose-card { flex: 0 0 200px; padding: 0; overflow: hidden; position: relative; }
+  .pose-card.big { flex: 0 0 min(52vh, 440px); width: min(46vw, 560px); }
+  .pose-card canvas { display: block; width: 100% !important; height: 100% !important; }
+  .pose-head { position: absolute; top: 0; left: 0; right: 0; z-index: 2;
+    display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+    background: linear-gradient(to bottom, color-mix(in oklch, #0c1017 78%, transparent), transparent); }
+  .pose-head h3 { margin: 0; font-size: 10.5px; font-weight: 700; letter-spacing: .09em;
+    text-transform: uppercase; color: var(--muted-fg); }
+  .pose-head .m { font-family: var(--mono); font-size: 10.5px; color: var(--muted-fg); margin-left: auto; }
   .lidar-card { flex: 0 0 210px; padding: 0; overflow: hidden; }
   /* expanded: grows right over the camera; the rail scrolls in what's left */
   .lidar-card.big { flex: 0 0 min(64vh, 560px); width: min(60vw, 720px); }
@@ -436,6 +445,15 @@
       </div>
     </div>
 
+    <div class="card pose-card" id="pose-card">
+      <div class="pose-head">
+        <h3>POSE</h3>
+        <span class="m" id="pose-m">—</span>
+        <button class="expand" id="pose-expand">Expand</button>
+      </div>
+      <canvas id="pose-canvas"></canvas>
+    </div>
+
     <div class="card lidar-card" id="lidar-card">
       <div class="lidar-head">
         <h3>MID360</h3>
@@ -630,6 +648,10 @@ const els = {
   sLidar: document.getElementById("s-lidar"),
   sCamera: document.getElementById("s-camera"),
   mode: document.getElementById("mode"),
+  poseCard: document.getElementById("pose-card"),
+  poseCanvas: document.getElementById("pose-canvas"),
+  poseM: document.getElementById("pose-m"),
+  poseExpand: document.getElementById("pose-expand"),
   panelsBtn: document.getElementById("panels-btn"),
   leftCol: document.querySelector(".left-col"),
   scrim: document.getElementById("scrim"),
@@ -1274,6 +1296,7 @@ function batteryRemaining(soc) {
 
 // ── telemetry rendering ──
 function renderState(s) {
+  onPoseState(s)
   if (!s) return
   // robot / FSM
   if (typeof s.fsmMachine === "number") els.vFsm.textContent = s.fsmMachine
@@ -1441,6 +1464,153 @@ function onSeq(msg) {
 // optional dimos LCM streams (forwarded by the backend) — surface unknown ones as a hint
 function onLcm(msg) { /* room for future LCM-driven widgets (odom, costmap, …) */ }
 
+// ── URDF pose panel ───────────────────────────────────────────────────────────
+// The robot drawn from its own encoders. Kinematics only: dimos's g1.urdf names
+// 59 STL meshes and ships NONE of them, so a mesh render was never on the table
+// — and a jointed skeleton is the better answer for a rail-sized panel anyway,
+// at 6 KB with no assets to fetch over the robot's wifi.
+//
+// JOINTS is the URDF's joint list, trimmed to what posing needs (parent, child,
+// origin, axis). Its 29 revolute joints are in the order the URDF declares them,
+// which is the same order as motor_state — so q[i] drives revolute joint i.
+const JOINTS = [{"n":"pelvis_contour_joint","t":"f","p":"pelvis","c":"pelvis_contour_link","xyz":[0.0,0.0,0.0],"rpy":[0.0,0.0,0.0],"axis":[0,0,1]},{"n":"left_hip_pitch_joint","t":"r","p":"pelvis","c":"left_hip_pitch_link","xyz":[0.0,0.06445,-0.1027],"rpy":[0.0,0.0,0.0],"axis":[0.0,1.0,0.0]},{"n":"left_hip_roll_joint","t":"r","p":"left_hip_pitch_link","c":"left_hip_roll_link","xyz":[0.0,0.052,-0.03046],"rpy":[0.0,-0.1749,0.0],"axis":[1.0,0.0,0.0]},{"n":"left_hip_yaw_joint","t":"r","p":"left_hip_roll_link","c":"left_hip_yaw_link","xyz":[0.025,0.0,-0.12412],"rpy":[0.0,0.0,0.0],"axis":[0.0,0.0,1.0]},{"n":"left_knee_joint","t":"r","p":"left_hip_yaw_link","c":"left_knee_link","xyz":[-0.07827,0.00215,-0.17734],"rpy":[0.0,0.1749,0.0],"axis":[0.0,1.0,0.0]},{"n":"left_ankle_pitch_joint","t":"r","p":"left_knee_link","c":"left_ankle_pitch_link","xyz":[0.0,-9e-05,-0.30001],"rpy":[0.0,0.0,0.0],"axis":[0.0,1.0,0.0]},{"n":"left_ankle_roll_joint","t":"r","p":"left_ankle_pitch_link","c":"left_ankle_roll_link","xyz":[0.0,0.0,-0.01756],"rpy":[0.0,0.0,0.0],"axis":[1.0,0.0,0.0]},{"n":"right_hip_pitch_joint","t":"r","p":"pelvis","c":"right_hip_pitch_link","xyz":[0.0,-0.06445,-0.1027],"rpy":[0.0,0.0,0.0],"axis":[0.0,1.0,0.0]},{"n":"right_hip_roll_joint","t":"r","p":"right_hip_pitch_link","c":"right_hip_roll_link","xyz":[0.0,-0.052,-0.03046],"rpy":[0.0,-0.1749,0.0],"axis":[1.0,0.0,0.0]},{"n":"right_hip_yaw_joint","t":"r","p":"right_hip_roll_link","c":"right_hip_yaw_link","xyz":[0.025,0.0,-0.12412],"rpy":[0.0,0.0,0.0],"axis":[0.0,0.0,1.0]},{"n":"right_knee_joint","t":"r","p":"right_hip_yaw_link","c":"right_knee_link","xyz":[-0.07827,-0.00215,-0.17734],"rpy":[0.0,0.1749,0.0],"axis":[0.0,1.0,0.0]},{"n":"right_ankle_pitch_joint","t":"r","p":"right_knee_link","c":"right_ankle_pitch_link","xyz":[0.0,9e-05,-0.30001],"rpy":[0.0,0.0,0.0],"axis":[0.0,1.0,0.0]},{"n":"right_ankle_roll_joint","t":"r","p":"right_ankle_pitch_link","c":"right_ankle_roll_link","xyz":[0.0,0.0,-0.01756],"rpy":[0.0,0.0,0.0],"axis":[1.0,0.0,0.0]},{"n":"waist_yaw_joint","t":"r","p":"pelvis","c":"waist_yaw_link","xyz":[0.0,0.0,0.0],"rpy":[0.0,0.0,0.0],"axis":[0.0,0.0,1.0]},{"n":"waist_roll_joint","t":"r","p":"waist_yaw_link","c":"waist_roll_link","xyz":[-0.00396,0.0,0.044],"rpy":[0.0,0.0,0.0],"axis":[1.0,0.0,0.0]},{"n":"waist_pitch_joint","t":"r","p":"waist_roll_link","c":"torso_link","xyz":[0.0,0.0,0.0],"rpy":[0.0,0.0,0.0],"axis":[0.0,1.0,0.0]},{"n":"logo_joint","t":"f","p":"torso_link","c":"logo_link","xyz":[0.00396,0.0,-0.044],"rpy":[0.0,0.0,0.0],"axis":[0,0,1]},{"n":"head_joint","t":"f","p":"torso_link","c":"head_link","xyz":[0.00396,0.0,-0.044],"rpy":[0.0,0.0,0.0],"axis":[0,0,1]},{"n":"imu_in_torso_joint","t":"f","p":"torso_link","c":"imu_in_torso","xyz":[-0.03959,-0.00224,0.14792],"rpy":[0.0,0.0,0.0],"axis":[0,0,1]},{"n":"imu_in_pelvis_joint","t":"f","p":"pelvis","c":"imu_in_pelvis","xyz":[0.04525,0.0,-0.08339],"rpy":[0.0,0.0,0.0],"axis":[0,0,1]},{"n":"d435_joint","t":"f","p":"torso_link","c":"d435_link","xyz":[0.05762,0.01753,0.42987],"rpy":[0.0,0.83078,0.0],"axis":[0,0,1]},{"n":"mid360_joint","t":"f","p":"torso_link","c":"mid360_link","xyz":[0.00028,3e-05,0.41618],"rpy":[0.0,0.04014,0.0],"axis":[0,0,1]},{"n":"left_shoulder_pitch_joint","t":"r","p":"torso_link","c":"left_shoulder_pitch_link","xyz":[0.00396,0.10022,0.24778],"rpy":[0.27931,5e-05,-0.00019],"axis":[0.0,1.0,0.0]},{"n":"left_shoulder_roll_joint","t":"r","p":"left_shoulder_pitch_link","c":"left_shoulder_roll_link","xyz":[0.0,0.038,-0.01383],"rpy":[-0.27925,0.0,0.0],"axis":[1.0,0.0,0.0]},{"n":"left_shoulder_yaw_joint","t":"r","p":"left_shoulder_roll_link","c":"left_shoulder_yaw_link","xyz":[0.0,0.00624,-0.1032],"rpy":[0.0,0.0,0.0],"axis":[0.0,0.0,1.0]},{"n":"left_elbow_joint","t":"r","p":"left_shoulder_yaw_link","c":"left_elbow_link","xyz":[0.01578,0.0,-0.08052],"rpy":[0.0,0.0,0.0],"axis":[0.0,1.0,0.0]},{"n":"left_wrist_roll_joint","t":"r","p":"left_elbow_link","c":"left_wrist_roll_link","xyz":[0.1,0.00189,-0.01],"rpy":[0.0,0.0,0.0],"axis":[1.0,0.0,0.0]},{"n":"left_wrist_pitch_joint","t":"r","p":"left_wrist_roll_link","c":"left_wrist_pitch_link","xyz":[0.038,0.0,0.0],"rpy":[0.0,0.0,0.0],"axis":[0.0,1.0,0.0]},{"n":"left_wrist_yaw_joint","t":"r","p":"left_wrist_pitch_link","c":"left_wrist_yaw_link","xyz":[0.046,0.0,0.0],"rpy":[0.0,0.0,0.0],"axis":[0.0,0.0,1.0]},{"n":"left_hand_palm_joint","t":"f","p":"left_wrist_yaw_link","c":"left_rubber_hand","xyz":[0.0415,0.003,0.0],"rpy":[0.0,0.0,0.0],"axis":[0,0,1]},{"n":"right_shoulder_pitch_joint","t":"r","p":"torso_link","c":"right_shoulder_pitch_link","xyz":[0.00396,-0.10021,0.24778],"rpy":[-0.27931,5e-05,0.00019],"axis":[0.0,1.0,0.0]},{"n":"right_shoulder_roll_joint","t":"r","p":"right_shoulder_pitch_link","c":"right_shoulder_roll_link","xyz":[0.0,-0.038,-0.01383],"rpy":[0.27925,0.0,0.0],"axis":[1.0,0.0,0.0]},{"n":"right_shoulder_yaw_joint","t":"r","p":"right_shoulder_roll_link","c":"right_shoulder_yaw_link","xyz":[0.0,-0.00624,-0.1032],"rpy":[0.0,0.0,0.0],"axis":[0.0,0.0,1.0]},{"n":"right_elbow_joint","t":"r","p":"right_shoulder_yaw_link","c":"right_elbow_link","xyz":[0.01578,0.0,-0.08052],"rpy":[0.0,0.0,0.0],"axis":[0.0,1.0,0.0]},{"n":"right_wrist_roll_joint","t":"r","p":"right_elbow_link","c":"right_wrist_roll_link","xyz":[0.1,-0.00189,-0.01],"rpy":[0.0,0.0,0.0],"axis":[1.0,0.0,0.0]},{"n":"right_wrist_pitch_joint","t":"r","p":"right_wrist_roll_link","c":"right_wrist_pitch_link","xyz":[0.038,0.0,0.0],"rpy":[0.0,0.0,0.0],"axis":[0.0,1.0,0.0]},{"n":"right_wrist_yaw_joint","t":"r","p":"right_wrist_pitch_link","c":"right_wrist_yaw_link","xyz":[0.046,0.0,0.0],"rpy":[0.0,0.0,0.0],"axis":[0.0,0.0,1.0]},{"n":"right_hand_palm_joint","t":"f","p":"right_wrist_yaw_link","c":"right_rubber_hand","xyz":[0.0415,-0.003,0.0],"rpy":[0.0,0.0,0.0],"axis":[0,0,1]}]
+
+const POSE_SEGMENT = 0x8ea2c6
+const POSE_JOINT = 0x2a78d6
+let poseRenderer, poseScene, poseCamera, poseRoot, poseBones = null, poseNodes = null
+let poseStandHeight = 0.79
+let poseQ = null, poseRpy = null, poseLastAt = 0
+
+function initPose() {
+    poseRenderer = new THREE.WebGLRenderer({ canvas: els.poseCanvas, antialias: true, alpha: true })
+    poseRenderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+    poseScene = new THREE.Scene()
+    poseCamera = new THREE.PerspectiveCamera(42, 1, 0.05, 20)
+    // Three-quarter view from slightly above chest height: a front-on view hides
+    // hip yaw and elbow bend, which are most of what an encoder view is for.
+    poseCamera.up.set(0, 0, 1)   // URDF is z-up
+    poseCamera.position.set(1.45, -1.45, 1.15)
+    poseCamera.lookAt(0, 0, 0.6)
+
+    poseRoot = new THREE.Group()
+    poseScene.add(poseRoot)
+
+    // One Object3D per link, parented exactly as the URDF says. Posing is then
+    // a single rotation per revolute joint and three.js composes the rest.
+    poseNodes = new Map()
+    poseBones = []
+    const linkOf = (name) => {
+        if (!poseNodes.has(name)) {
+            poseNodes.set(name, new THREE.Group())
+        }
+        return poseNodes.get(name)
+    }
+    // Sensor and cosmetic frames are real URDF joints but they are not body:
+    // drawn, the mid360 mount alone throws a 1.2 m spike out of the chest.
+    const NON_STRUCTURAL = /imu_in_|logo_|d435_|mid360_/
+    let revoluteIndex = 0
+    for (const j of JOINTS) {
+        const structural = !NON_STRUCTURAL.test(j.n)
+        const parent = linkOf(j.p)
+        const child = linkOf(j.c)
+        const hinge = new THREE.Group()
+        hinge.position.set(j.xyz[0], j.xyz[1], j.xyz[2])
+        hinge.rotation.set(j.rpy[0], j.rpy[1], j.rpy[2], "ZYX")
+        hinge.add(child)
+        parent.add(hinge)
+        if (j.t === "r") {
+            poseBones.push({ node: child, axis: new THREE.Vector3(...j.axis).normalize(), i: revoluteIndex++ })
+        }
+        // The bone from a parent link to this joint is fixed in the PARENT's
+        // frame, so it is drawn there and needs no inverse of the joint rotation.
+        if (structural && Math.hypot(j.xyz[0], j.xyz[1], j.xyz[2]) > 0.02) {
+            const geom = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(0, 0, 0),
+                new THREE.Vector3(j.xyz[0], j.xyz[1], j.xyz[2]),
+            ])
+            parent.add(new THREE.Line(geom, new THREE.LineBasicMaterial({ color: POSE_SEGMENT })))
+        }
+        if (j.t === "r") {
+            const dot = new THREE.Mesh(
+                new THREE.SphereGeometry(0.016, 8, 6),
+                new THREE.MeshBasicMaterial({ color: POSE_JOINT }),
+            )
+            child.add(dot)
+        }
+    }
+    const base = poseNodes.get(JOINTS[0].p)
+    if (base) {
+        poseRoot.add(base)
+    }
+    // The URDF's root is the pelvis, so in the zero pose the feet sit below the
+    // origin. Measure the skeleton once and lift it so it stands ON the grid.
+    poseRoot.updateMatrixWorld(true)
+    const bounds = new THREE.Box3().setFromObject(poseRoot)
+    poseStandHeight = Number.isFinite(bounds.min.z) ? -bounds.min.z : 0.79
+    poseRoot.position.z = poseStandHeight
+    // Ground line, so a lean or a fall is obvious rather than ambiguous.
+    const grid = new THREE.GridHelper(1.6, 8, 0x2a3340, 0x1b2129)
+    grid.rotation.x = Math.PI / 2
+    poseScene.add(grid)
+    resizePose()
+    renderPose()
+}
+
+function resizePose() {
+    if (!poseRenderer) {
+        return
+    }
+    const box = els.poseCanvas.getBoundingClientRect()
+    if (box.width < 2 || box.height < 2) {
+        return
+    }
+    poseRenderer.setSize(box.width, box.height, false)
+    poseCamera.aspect = box.width / box.height
+    poseCamera.updateProjectionMatrix()
+}
+
+function renderPose() {
+    if (!poseRenderer) {
+        return
+    }
+    if (poseQ) {
+        for (const bone of poseBones) {
+            const angle = poseQ[bone.i]
+            if (typeof angle === "number") {
+                bone.node.setRotationFromAxisAngle(bone.axis, angle)
+            }
+        }
+    }
+    // The IMU's roll and pitch tilt the whole body; yaw is left out so the view
+    // does not spin while the robot turns on the spot.
+    if (poseRpy) {
+        poseRoot.rotation.set(poseRpy[0], poseRpy[1], 0, "ZYX")
+        poseRoot.position.z = poseStandHeight
+    }
+    poseRenderer.render(poseScene, poseCamera)
+}
+
+function onPoseState(msg) {
+    if (Array.isArray(msg.q) && msg.q.length) {
+        poseQ = msg.q
+        poseLastAt = Date.now()
+    }
+    if (Array.isArray(msg.rpy) && msg.rpy.length === 3) {
+        poseRpy = msg.rpy
+    }
+    renderPose()
+}
+
+setInterval(() => {
+    if (!poseRenderer) {
+        return
+    }
+    const age = poseLastAt === 0 ? Infinity : Date.now() - poseLastAt
+    els.poseM.textContent = poseQ === null ? "no encoder data"
+        : age > 3000 ? `stale ${Math.round(age / 1000)}s`
+        : `${poseQ.length} joints`
+}, 1000)
+
 // ── three.js lidar point cloud ──
 const MAX_POINTS = 30000
 let renderer, scene, camera3d, controls, cloudGeom, cloudPoints, cloudPositions, cloudColors
@@ -1514,7 +1684,13 @@ els.lidarExpand.onclick = () => {
   els.lidarExpand.textContent = big ? "Shrink" : "Expand"
   requestAnimationFrame(resizeLidar)
 }
-addEventListener("resize", () => requestAnimationFrame(resizeLidar))
+addEventListener("resize", () => requestAnimationFrame(() => { resizeLidar(); resizePose(); renderPose() }))
+
+els.poseExpand.onclick = () => {
+    const big = els.poseCard.classList.toggle("big")
+    els.poseExpand.textContent = big ? "Shrink" : "Expand"
+    requestAnimationFrame(() => { resizePose(); renderPose() })
+}
 
 // ── driving: keyboard + d-pad → throttled "move" ──
 const keys = { fwd: false, back: false, sl: false, sr: false, tl: false, tr: false, boost: false }
@@ -1743,6 +1919,7 @@ for (const heading of document.querySelectorAll(".card h3")) {
 
 // ── boot ──
 initLidar()
+initPose()
 renderLink()
 updateToggleLabels()
 dimApp.send("hello", {}) // ask the backend to replay current status

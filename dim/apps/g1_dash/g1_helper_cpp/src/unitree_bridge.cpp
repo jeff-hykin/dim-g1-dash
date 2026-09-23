@@ -60,6 +60,9 @@ constexpr auto kStatusPeriod = std::chrono::seconds(1);
 // R2+A → advanced balance (FSM 801 entering, 802 active).
 constexpr int kFsmZeroTorque = 0;
 constexpr int kFsmDamp = 1;
+// The G1's 29 actuated joints, in the motor order the URDF's revolute joints
+// are declared in — index i of motor_state is joint i of the pose panel.
+constexpr size_t kPoseJointCount = 29;
 constexpr int kFsmSit = 3;
 constexpr int kFsmGetReady = 4;
 constexpr int kFsmBasicBalance = 200;
@@ -625,6 +628,15 @@ void UnitreeBridge::on_low_state(const void* message) {
         if (temp > hottest_temp) { hottest_temp = temp; hottest_index = static_cast<int>(i); }
     }
 
+    // Encoder positions for the pose panel. Rounded to a milliradian: the joints
+    // are nowhere near that precise, and full doubles would triple the size of
+    // a message that goes out ten times a second over conference wifi.
+    std::vector<double> q;
+    q.reserve(motors.size());
+    for (size_t i = 0; i < motors.size() && i < kPoseJointCount; ++i) {
+        q.push_back(std::round(static_cast<double>(motors[i].q()) * 1000.0) / 1000.0);
+    }
+
     std::string mode;
     { std::lock_guard<std::mutex> guard(mode_mutex_); mode = mode_; }
 
@@ -639,6 +651,7 @@ void UnitreeBridge::on_low_state(const void* message) {
         {"hottestJoint", hottest_index},
         {"hottestTemp", hottest_temp},
         {"motorCount", static_cast<int>(motors.size())},
+        {"q", q},
         {"fsmMachine", static_cast<int>(state.mode_machine())},
         {"fsmPr", static_cast<int>(state.mode_pr())},
         {"tick", static_cast<uint32_t>(state.tick())},
