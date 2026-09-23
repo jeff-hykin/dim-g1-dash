@@ -18,7 +18,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>G1 Dash · DimOS</title>
 <link rel="stylesheet" href="/assets/theme.css" />
 <style>
@@ -87,10 +87,12 @@
   .subs .s.click { cursor: pointer; }
   .subs .s.click:hover { color: #fff; text-decoration: underline; }
 
-  .mode { display: inline-flex; align-items: center; font-size: 11px; font-weight: 700; letter-spacing: .05em;
+  .mode { display: inline-flex; align-items: center; cursor: pointer; font-size: 11px; font-weight: 700; letter-spacing: .05em;
     text-transform: uppercase; color: rgba(255,255,255,.82);
     background: color-mix(in oklch, black 46%, transparent); backdrop-filter: blur(4px);
     border: 1px solid color-mix(in oklch, white 16%, transparent); border-radius: 999px; padding: 5px 12px; }
+  .mode:hover { border-color: color-mix(in oklch, white 34%, transparent); }
+  .mode.copied { color: var(--primary-fg); background-color: var(--primary); border-color: var(--primary); }
   .mode.walking { color: color-mix(in oklch, var(--primary) 65%, white); border-color: color-mix(in oklch, var(--primary) 40%, transparent); }
   /* collapse / limp — the robot is not holding itself up */
   .mode.damp { color: #ff6a5b; border-color: color-mix(in oklch, #ff2626 45%, transparent);
@@ -221,6 +223,56 @@
   .vel.on { border-color: color-mix(in oklch, var(--primary) 60%, transparent); }
   .vel .row { display: flex; justify-content: space-between; gap: 10px; }
 
+  /* Hidden on desktop, where the panels are always on screen. */
+  .panels-btn { display: none; appearance: none; cursor: pointer; font: inherit; font-size: 17px; line-height: 1;
+    color: #fff; background: color-mix(in oklch, black 46%, transparent); backdrop-filter: blur(4px);
+    border: 1px solid color-mix(in oklch, white 16%, transparent); border-radius: var(--radius); padding: 7px 10px; }
+  .scrim { display: none; position: absolute; inset: 0; z-index: 7;
+    background: color-mix(in oklch, black 55%, transparent); }
+  .scrim.open { display: block; }
+
+  /* ── phone ──────────────────────────────────────────────────────────────────
+     A phone has no hover and no keyboard, so the two things you cannot do
+     without — drive and the commands — get the permanent screen space, and the
+     read-only telemetry moves into a drawer. The dock goes to the TOP because
+     the bottom-right corner is where the thumb lives, and that belongs to the
+     d-pad. */
+  @media (max-width: 820px) {
+    .topbar { gap: 8px; flex-wrap: wrap;
+      padding: calc(8px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right)) 8px calc(10px + env(safe-area-inset-left)); }
+    .panels-btn { display: block; }
+    .brand .wordmark { display: none; }
+    .subs { display: none; }
+    .mode { font-size: 10px; padding: 4px 9px; }
+
+    /* commands across the top, under the bar, scrolling sideways */
+    .dock { left: 0; right: 0; top: calc(var(--topbar-h, 52px) + 4px); bottom: auto; transform: none;
+      max-width: none; justify-content: flex-start; padding: 6px 10px; gap: 7px; }
+    .act { font-size: 13px; padding: 9px 13px; }
+
+    /* telemetry becomes a drawer — off-canvas until ☰ */
+    .left-col { top: 0; bottom: 0; left: 0; width: min(80vw, 300px); z-index: 12;
+      padding: calc(var(--topbar-h, 52px) + 8px) 10px 10px; background: color-mix(in oklch, #06080c 92%, transparent);
+      backdrop-filter: blur(10px); border-right: 1px solid color-mix(in oklch, white 12%, transparent);
+      transform: translateX(-102%); transition: transform .18s ease; }
+    .left-col.open { transform: translateX(0); }
+    .lidar-card { flex: 0 0 240px; }
+    .lidar-card.big { width: auto; }
+
+    /* the thumb corner: bigger targets, clear of the dock */
+    .dpad { right: calc(12px + env(safe-area-inset-right)); bottom: calc(12px + env(safe-area-inset-bottom));
+      grid-template-columns: repeat(3, 62px); grid-template-rows: repeat(2, 62px); gap: 8px; }
+    .db { font-size: 21px; }
+    .vel { right: calc(12px + env(safe-area-inset-right)); bottom: calc(146px + env(safe-area-inset-bottom)); font-size: 11px; min-width: 112px; }
+    .toast { top: auto; bottom: calc(150px + env(safe-area-inset-bottom)); }
+    .palette-foot { display: none; }
+  }
+  /* Short landscape phone: the d-pad still has to fit under the dock. */
+  @media (max-width: 820px) and (max-height: 460px) {
+    .dpad { grid-template-columns: repeat(3, 50px); grid-template-rows: repeat(2, 50px); }
+    .vel { display: none; }
+  }
+
   /* transient warning toast */
   .toast { position: absolute; left: 50%; top: 60px; transform: translate(-50%, -14px); z-index: 20;
     max-width: min(440px, 88vw); padding: 11px 16px; font-size: 13px; font-weight: 600; line-height: 1.35;
@@ -319,7 +371,8 @@
     <div class="vignette"></div>
 
     <div class="topbar">
-      <div class="brand">
+      <button class="panels-btn" id="panels-btn" title="show/hide the telemetry panels" aria-label="panels">☰</button>
+    <div class="brand">
         <svg class="mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
              stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 3.6 V5.1"/>
@@ -336,7 +389,7 @@
         <span class="s click" id="s-lidar"><span class="d"></span>MID360</span>
         <span class="s click" id="s-camera"><span class="d"></span>RS</span>
       </div>
-      <div class="mode" id="mode">—</div>
+      <div class="mode" id="mode" title="click to copy the full state">—</div>
       <div class="pill" id="batt" title="battery charge, and estimated time until 5% reserve" style="display:none">
         <span class="d"></span><span id="batt-t">—%</span>
       </div>
@@ -406,6 +459,7 @@
       <button class="db tr"  data-drive="tr"  data-help="turn right (D)"   title="turn right (D)">↻</button>
     </div>
 
+    <div class="scrim" id="scrim"></div>
     <div class="dock" id="dock"></div>
     <div class="toast" id="toast"></div>
 
@@ -464,7 +518,9 @@ const MODES = {
   // Squat and sit are both "no balance control" postures (the remote's L1+Down
   // and L1+Left). Squat crouches on its own legs; sit expects something to sit
   // ON — it's the shutdown posture, done with the robot over a chair.
-  squat:      { label: "squat",      fsms: [2],
+  // FSM 2 is the dead Squat() id this firmware ignores, and 706 is a transition
+  // id that GetFsmId never reports at rest, so there is no resting id to match.
+  squat:      { label: "squat",      fsms: [],
                 blurb: "crouched on its own legs, no balance control" },
   sit:        { label: "sit",        fsms: [3],
                 blurb: "seated, no balance control — needs a chair or support under it" },
@@ -489,18 +545,37 @@ const DRIVING_MODES = ["walk", "primitive_walk"]
 // Safety tiers: `danger: "red"` = the robot goes limp and FALLS if standing;
 // `danger: "amber"` = it takes torque control, or lets go in a controlled way.
 const COMMANDS = [
-  { name: "ready", mode: "stiffen", label: "Stiffen", cls: "",
-    hint: "locks the joints and straightens the legs — the step before balancing" },
+  { name: "ready", mode: "stiffen", label: "Stiffen", cls: "", seq: true, danger: "amber",
+    confirmTitle: "robot damps, then straightens up",
+    hint: "locks the joints and straightens the legs — the step before balancing",
+    warn: "The robot straightens its legs and locks the joints under torque, ready to balance. Give it clear space. (From zero torque it damps first to wake the controller — it never damps a robot that is already holding itself up.)" },
   { name: "stand", mode: "walk", label: "Walk", cls: "good", seq: true, danger: "amber",
     warn: "The robot will straighten its legs and take torque control to self-balance, then walk on command. Make sure the G1 is on a gantry or on flat ground with clear space around it." },
   { name: "damp", mode: "collapse", label: "Collapse", cls: "bad", danger: "red",
     warn: "All joints go limp immediately. If the robot is standing or balancing, <b>IT WILL FALL</b>. Only confirm if it is seated, crouched, or on a gantry. For a moving emergency use E-STOP." },
   { name: "wavehand",  label: "Wave",  cls: "", requires: BALANCING_MODES },
   { name: "shakehand", label: "Shake", cls: "", requires: BALANCING_MODES },
-  // No confirmation: squat supports itself on its own legs, needs no prep or
-  // clearance, and is reversible with Stiffen.
-  { name: "squat", mode: "squat", label: "Squat", cls: "",
-    hint: "slowly crouches onto its own legs — no chair or clearance needed" },
+  // Getting back up. In the dock, not the palette: you reach for these when the
+  // robot is on the floor or crouched, which is exactly when hunting through a
+  // command palette is the wrong thing to be doing. No `requires` either — the
+  // robot knows whether it can stand from where it is, and a wrongly-disabled
+  // recovery button is worse than a refused one.
+  //
+  // One button, not two: Squat and Stand-from-squat were always the same id.
+  // 706 toggles and the robot picks the direction from the posture it is in, so
+  // a second button could only ever send the identical command — but a fixed
+  // label is then a lie half the time. `directions` swaps the wording (and the
+  // confirm) to whichever way the button will actually go right now.
+  { name: "squat", mode: "squat", label: "Stand (from Squat)", cls: "", seq: true, danger: "amber",
+    directions: {
+      down: { label: "Squat", confirmTitle: "robot will crouch",
+              warn: "The robot crouches down onto its own legs and lets go of balance control. It holds itself up, so it needs no chair and no clearance — press again to come back up." },
+      up:   { label: "Stand (from Squat)", confirmTitle: "robot will rise and self-balance",
+              warn: "The robot straightens its legs out of a squat and takes torque control to balance. Give it clear space." },
+    } },
+  { name: "lie2standup", label: "Stand Up (from lying)", cls: "", seq: true, danger: "amber",
+    confirmTitle: "robot will get up off the floor",
+    warn: "The robot pushes itself up from lying on its back and ends up balancing. It needs clear space around and above it, and the floor to be flat." },
   // Sit is Unitree's shutdown posture: balance control is off and the robot
   // expects to come down onto something, so the label carries the requirement
   // and it gets the same confirm as the other let-go commands.
@@ -551,6 +626,9 @@ const els = {
   sLidar: document.getElementById("s-lidar"),
   sCamera: document.getElementById("s-camera"),
   mode: document.getElementById("mode"),
+  panelsBtn: document.getElementById("panels-btn"),
+  leftCol: document.querySelector(".left-col"),
+  scrim: document.getElementById("scrim"),
   estop: document.getElementById("estop"),
   vLoco: document.getElementById("v-loco"), vMotion: document.getElementById("v-motion"),
   vFsm: document.getElementById("v-fsm"),
@@ -683,6 +761,18 @@ confirmEls.go.onclick = () => { const action = confirmAction; closeConfirm(); if
 // unknown we allow everything — the helper reports the robot's own refusal, and
 // a wrongly-greyed button is worse than a refused one.
 function modeNames(keys) { return keys.map(key => MODES[key].label).join(", ") }
+
+// Modes where the robot is up on its legs. A toggle command pressed from one of
+// these sends the robot DOWN; from anything else (or an unknown mode, which is
+// when you are reaching for the button because it is on the floor) it comes UP.
+const UPRIGHT_MODES = ["walk", "primitive_walk", "stand", "stiffen"]
+// Reads the button the way it will actually behave right now. Everything that
+// renders or fires a command goes through this, so the dock, the tooltip, the
+// palette and the confirm dialog can never disagree about the direction.
+function resolveCommand(cmd) {
+  if (!cmd.directions) return cmd
+  return { ...cmd, ...cmd.directions[UPRIGHT_MODES.includes(currentMode) ? "down" : "up"] }
+}
 function blockedReason(cmd) {
   if (!cmd.requires || !currentMode) return null
   if (cmd.requires.includes(currentMode)) return null
@@ -697,7 +787,8 @@ function commandTitle(cmd) {
 
 // ── command dock ──
 const commandButtons = new Map()
-function runCommand(cmd) {
+function runCommand(rawCmd) {
+  const cmd = resolveCommand(rawCmd)
   if (!helperReady) return toast("Helper not connected yet")
   const blocked = blockedReason(cmd)
   if (blocked) return toast(`${cmd.label} ${blocked}`)
@@ -711,9 +802,11 @@ function runCommand(cmd) {
   else fire()
 }
 function refreshCommandStates() {
-  for (const [cmd, button] of commandButtons) {
+  for (const [rawCmd, button] of commandButtons) {
+    const cmd = resolveCommand(rawCmd)
     const blocked = blockedReason(cmd)
     button.disabled = !!blocked
+    button.textContent = cmd.label
     button.title = commandTitle(cmd)
     button.classList.toggle("active-mode", !!cmd.mode && cmd.mode === currentMode)
   }
@@ -729,14 +822,61 @@ function refreshCommandStates() {
 for (const cmd of COMMANDS.filter(cmd => !cmd.advanced)) {
   const button = document.createElement("button")
   button.className = "act " + cmd.cls
-  button.textContent = cmd.label
-  button.title = commandTitle(cmd)
+  button.textContent = resolveCommand(cmd).label
+  button.title = commandTitle(resolveCommand(cmd))
   button.onclick = () => runCommand(cmd)
   commandButtons.set(cmd, button)
   els.dock.appendChild(button)
 }
 
 els.estop.onclick = () => { dimApp.send("estop", {}); toast("E-STOP — damping") }
+
+// ── copy the state line ──
+// The dash is served over plain http, so navigator.clipboard does not exist
+// (it is secure-context only) — the execCommand path is the one that actually
+// runs here, not a legacy fallback.
+async function copyText(text) {
+  try {
+    if (navigator.clipboard && isSecureContext) { await navigator.clipboard.writeText(text); return true }
+  } catch (err) { /* fall through to the textarea */ }
+  const area = document.createElement("textarea")
+  area.value = text
+  area.setAttribute("readonly", "")
+  area.style.cssText = "position:fixed;top:0;left:0;opacity:0"
+  document.body.appendChild(area)
+  area.select()
+  let ok = false
+  try { ok = document.execCommand("copy") } catch (err) { ok = false }
+  area.remove()
+  return ok
+}
+els.mode.onclick = async () => {
+  const text = els.mode.textContent.trim()
+  if (await copyText(text)) {
+    els.mode.classList.add("copied")
+    setTimeout(() => els.mode.classList.remove("copied"), 700)
+    toast("copied: " + text)
+  } else {
+    toast("couldn't copy — " + text)
+  }
+}
+
+// ── phone: telemetry drawer ──
+function setPanels(open) {
+  els.leftCol.classList.toggle("open", open)
+  els.scrim.classList.toggle("open", open)
+}
+// The bar wraps to two rows on a phone, and how many depends on how long the
+// state string is — so the dock's offset is measured, not guessed.
+const topbarEl = document.querySelector(".topbar")
+function syncTopbarHeight() {
+  document.documentElement.style.setProperty("--topbar-h", Math.ceil(topbarEl.getBoundingClientRect().height) + "px")
+}
+new ResizeObserver(syncTopbarHeight).observe(topbarEl, { box: "border-box" })
+syncTopbarHeight()
+
+els.panelsBtn.onclick = () => setPanels(!els.leftCol.classList.contains("open"))
+els.scrim.onclick = () => setPanels(false)
 
 // ── status / link rendering ──
 // What the helper is asked to hold. The MID360 and camera are exclusive-access,
@@ -1191,7 +1331,22 @@ function resolveMode(fsm, balance) {
   if (balancing && balance === BALANCE_HOLD_STILL) return "stand"
   return fromFsm || null
 }
+// The robot's numbers, unedited, next to the friendly name. A name is a guess —
+// FSM_TO_MODE only covers the ids we have actually seen — so when the guess is
+// missing or wrong the raw ids are the only thing that says what is going on.
+// "?" means the FSM id is real but unmapped, which is information, not an error.
+let lastMotionMode = "?"
+function rawState(msg) {
+  const parts = [`fsm ${msg.fsm}`]
+  if (typeof msg.balance === "number") parts.push(`bal ${msg.balance}`)
+  parts.push(lastMotionMode)
+  return parts.join(" · ")
+}
 function renderLoco(msg) {
+  if (typeof msg.motionMode === "string") {
+    lastMotionMode = msg.motionMode
+    els.vMotion.textContent = msg.motionMode
+  }
   if (typeof msg.fsm === "number") {
     const resolved = resolveMode(msg.fsm, msg.balance)
     els.vLoco.textContent = msg.fsm < 0 ? "unreachable"
@@ -1201,13 +1356,17 @@ function renderLoco(msg) {
       refreshCommandStates()
     }
     if (!msg.seqRunning) {
-      els.mode.textContent = currentMode ? "mode: " + MODES[currentMode].label : "mode: —"
-      els.mode.title = currentMode ? MODES[currentMode].blurb : "the robot's controller state is unknown"
-      els.mode.className = "mode " + (DRIVING_MODES.includes(currentMode) ? "walking"
-        : (currentMode === "collapse" || currentMode === "limp") ? "damp" : "")
+      const name = currentMode ? MODES[currentMode].label : (msg.fsm < 0 ? "unreachable" : "?")
+      els.mode.textContent = `mode: ${name} · ${rawState(msg)}`
+      syncTopbarHeight()   // the bar rewraps when this string changes length
+      els.mode.title = currentMode ? MODES[currentMode].blurb
+        : `FSM ${msg.fsm} is not one this panel has a name for — the raw ids are what the robot reports`
+      // Toggle, don't reassign: a wholesale className overwrite at 1 Hz wiped
+      // the copy-confirmation flash within a second of the click.
+      els.mode.classList.toggle("walking", DRIVING_MODES.includes(currentMode))
+      els.mode.classList.toggle("damp", currentMode === "collapse" || currentMode === "limp")
     }
   }
-  if (typeof msg.motionMode === "string") els.vMotion.textContent = msg.motionMode
 }
 
 // ── engage-sequence progress (the g1_stand flow streaming step events) ──
@@ -1218,7 +1377,8 @@ function onSeq(msg) {
   } else if (msg.state !== "start") {
     toast(text)
   }
-  els.mode.textContent = msg.step === "sequence" ? (msg.state === "done" ? "ready to drive" : msg.state) : text
+  // Not every sequence ends ready to drive — a squat or a stiffen doesn't.
+  els.mode.textContent = msg.step === "sequence" ? (msg.state === "done" ? `${msg.seq} done` : msg.state) : text
   els.mode.className = "mode" + (msg.state === "failed" || msg.state === "timeout" ? " damp" : "")
 }
 
@@ -1412,7 +1572,7 @@ function paletteActions() {
   for (const cmd of COMMANDS) {
     const blocked = blockedReason(cmd)
     actions.push({
-      label: cmd.mode ? `${cmd.label} → mode: ${MODES[cmd.mode].label}` : cmd.label,
+      label: cmd.mode ? `${resolveCommand(cmd).label} → mode: ${MODES[cmd.mode].label}` : resolveCommand(cmd).label,
       hint: blocked ? blocked
         : cmd.danger === "red" ? "danger" : cmd.advanced ? "advanced"
         : cmd.seq ? "sequence" : cmd.danger === "amber" ? "balance" : "",
