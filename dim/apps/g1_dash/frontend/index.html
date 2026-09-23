@@ -546,6 +546,7 @@ const DRIVING_MODES = ["walk", "primitive_walk"]
 // `danger: "amber"` = it takes torque control, or lets go in a controlled way.
 const COMMANDS = [
   { name: "ready", mode: "stiffen", label: "Stiffen", cls: "", seq: true, danger: "amber",
+    notFrom: BALANCING_MODES,
     confirmTitle: "robot damps, then straightens up",
     hint: "locks the joints and straightens the legs — the step before balancing",
     warn: "The robot straightens its legs and locks the joints under torque, ready to balance. Give it clear space. (From zero torque it damps first to wake the controller — it never damps a robot that is already holding itself up.)" },
@@ -774,6 +775,16 @@ function resolveCommand(cmd) {
   return { ...cmd, ...cmd.directions[UPRIGHT_MODES.includes(currentMode) ? "down" : "up"] }
 }
 function blockedReason(cmd) {
+  // Already there. Re-running an engage is not harmless: the Walk sequence
+  // would send get-ready to a balancing robot and re-engage from scratch. This
+  // also explains a Stiffen at FSM 4 "doing nothing" — it had nowhere to go.
+  if (cmd.mode && cmd.mode === currentMode) return `already in ${MODES[cmd.mode].label}`
+  // Legal on the robot but wrong from here: get-ready straightens the legs and
+  // stops balancing, so asking for it while the robot is balancing on its own
+  // hands control back with no controller holding it up. Collapse first.
+  if (cmd.notFrom && currentMode && cmd.notFrom.includes(currentMode)) {
+    return `not from ${MODES[currentMode].label} — Collapse first`
+  }
   if (!cmd.requires || !currentMode) return null
   if (cmd.requires.includes(currentMode)) return null
   return `needs mode: ${modeNames(cmd.requires)} — robot is in ${MODES[currentMode].label}`

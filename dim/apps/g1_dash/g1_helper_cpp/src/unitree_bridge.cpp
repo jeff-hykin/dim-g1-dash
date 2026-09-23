@@ -528,6 +528,14 @@ void UnitreeBridge::run_sequence(std::string name, std::string gait) {
         ok = ensure_ai_mode() &&
              damp_if_limp() &&
              run_fsm_transition(name, target);
+    } else if (name == "stand" && (query_fsm_id() == kFsmAdvancedEntry ||
+                                   query_fsm_id() == kFsmAdvancedActive)) {
+        // Already in the advanced controller. Re-running the engage would send
+        // get-ready to a BALANCING robot, dropping it out of balance just to
+        // climb back in — a lurch for nothing.
+        protocol_.log("stand: already in the advanced controller");
+        emit_seq("stand", "ok");
+        ok = true;
     } else {
         // Full flows: ai mode → damp → ready → (advanced | FSM 200 + gait).
         ok = ensure_ai_mode() &&
