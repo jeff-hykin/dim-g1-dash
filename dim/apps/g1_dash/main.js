@@ -251,6 +251,12 @@ dimApp.onReceive((kind, payload) => {
         forceCameraTakeover()
     } else if (kind === "hello") {
         pushStatus() // bring a freshly-opened panel up to date
+    } else if (kind === "ping") {
+        // The panel's heartbeat. Answering proves the whole path back to this
+        // process is alive, which is what separates "the dashboard lost its
+        // connection" from "the robot went quiet" — the two look identical in
+        // the panel otherwise, and they need different reactions.
+        dimApp.send("g1", { type: "pong", id: payload?.id ?? null, helper: helperReady })
     }
 })
 

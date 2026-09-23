@@ -95,6 +95,9 @@
   .mode.copied { color: var(--primary-fg); background-color: var(--primary); border-color: var(--primary); }
   .mode.walking { color: color-mix(in oklch, var(--primary) 65%, white); border-color: color-mix(in oklch, var(--primary) 40%, transparent); }
   /* collapse / limp — the robot is not holding itself up */
+  /* the robot stopped reporting — the text is history, not state */
+  .mode.stale { color: #ffb02e; border-color: color-mix(in oklch, #ffb02e 55%, transparent);
+    background-color: color-mix(in oklch, #ffb02e 16%, color-mix(in oklch, black 46%, transparent)); }
   .mode.damp { color: #ff6a5b; border-color: color-mix(in oklch, #ff2626 45%, transparent);
     background-color: color-mix(in oklch, #ff2626 14%, color-mix(in oklch, black 46%, transparent)); }
 
@@ -1321,6 +1324,7 @@ function onG1(msg) {
       if ("unitree" in msg || "lidar" in msg || "camera" in msg) renderStatus(msg)
       break
     case "ready": helperReady = true; renderLink(); break
+    case "pong": lastPongAt = Date.now(); break
     case "state": renderState(msg); break
     case "loco": renderLoco(msg); break
     case "seq": onSeq(msg); break
@@ -1347,6 +1351,44 @@ function resolveMode(fsm, balance) {
 // missing or wrong the raw ids are the only thing that says what is going on.
 // "?" means the FSM id is real but unmapped, which is information, not an error.
 let lastMotionMode = "?"
+// The loco poll is 1 Hz. If several go missing the robot is not telling us
+// anything, and whatever MODE last said is a guess about the past — say so
+// rather than keep showing it as fact.
+const LOCO_STALE_MS = 4000
+const PING_EVERY_MS = 2000
+const PONG_DEAD_MS = 6000
+let lastLocoAt = 0
+let lastLocoText = "mode: —"
+let lastPongAt = 0
+let pingSeq = 0
+
+// Two different silences, and the fix for each is different: if the pong stops
+// the dashboard has lost the robot, and reloading or checking wifi is the move;
+// if pongs keep coming but loco events stop, the link is fine and the helper or
+// the robot's loco service is the problem. Showing one message for both is what
+// let MODE sit on "walk · fsm 802" while the G1 lay damp on the floor.
+function heartbeat() {
+    pingSeq++
+    dimApp.send("ping", { id: pingSeq })
+    if (lastLocoAt === 0 && lastPongAt === 0) {
+        return
+    }
+    const locoAge = Date.now() - lastLocoAt
+    const pongAge = Date.now() - lastPongAt
+    const linkDead = lastPongAt !== 0 && pongAge > PONG_DEAD_MS
+    if (!linkDead && locoAge < LOCO_STALE_MS) {
+        return
+    }
+    const seconds = Math.round((linkDead ? pongAge : locoAge) / 1000)
+    els.mode.textContent = linkDead
+        ? `no link ${seconds}s · ${lastLocoText}`
+        : `stale ${seconds}s · ${lastLocoText}`
+    els.mode.classList.add("stale")
+    els.mode.title = linkDead
+        ? "The dashboard is not reaching the robot at all — this is the last value received, not the current state"
+        : "The robot has stopped reporting its mode — the dashboard is still connected, so this is the helper or the loco service"
+}
+setInterval(heartbeat, PING_EVERY_MS)
 function rawState(msg) {
   const parts = [`fsm ${msg.fsm}`]
   if (typeof msg.balance === "number") parts.push(`bal ${msg.balance}`)
@@ -1368,7 +1410,10 @@ function renderLoco(msg) {
     }
     if (!msg.seqRunning) {
       const name = currentMode ? MODES[currentMode].label : (msg.fsm < 0 ? "unreachable" : "?")
-      els.mode.textContent = `mode: ${name} · ${rawState(msg)}`
+      lastLocoText = `mode: ${name} · ${rawState(msg)}`
+      lastLocoAt = Date.now()
+      els.mode.classList.remove("stale")
+      els.mode.textContent = lastLocoText
       syncTopbarHeight()   // the bar rewraps when this string changes length
       els.mode.title = currentMode ? MODES[currentMode].blurb
         : `FSM ${msg.fsm} is not one this panel has a name for — the raw ids are what the robot reports`
