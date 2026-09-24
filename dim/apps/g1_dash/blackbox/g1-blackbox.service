@@ -1,0 +1,14 @@
+[Unit]
+Description=G1 black box — rolling jsonl of FSM, IMU, joints, motor temps
+
+[Service]
+Type=simple
+ExecStart=/home/unitree/dimos/.venv/bin/python -u /home/unitree/.dimos/blackbox/g1_blackbox.py
+Restart=always
+RestartSec=5
+Nice=10
+StandardOutput=append:/home/unitree/.dimos/logs/blackbox/service.log
+StandardError=append:/home/unitree/.dimos/logs/blackbox/service.log
+
+[Install]
+WantedBy=default.target
