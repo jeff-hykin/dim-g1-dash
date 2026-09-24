@@ -448,6 +448,9 @@
       <div class="pill" id="batt" title="battery charge, and estimated time until 5% reserve" style="display:none">
         <span class="d"></span><span id="batt-t">—%</span>
       </div>
+      <div class="pill" id="temp" title="hottest motor — the hotter it runs, the sooner it derates" style="display:none">
+        <span class="d"></span><span id="temp-t">—°C</span>
+      </div>
       <div class="spacer"></div>
       <button class="estop" id="estop" title="Zero velocity + Damp (Space)">E-STOP</button>
     </div>
@@ -730,6 +733,7 @@ const els = {
   vFps: document.getElementById("v-fps"), vLag: document.getElementById("v-lag"),
   vPts: document.getElementById("v-pts"),
   batt: document.getElementById("batt"), battT: document.getElementById("batt-t"),
+  temp: document.getElementById("temp"), tempT: document.getElementById("temp-t"),
   lidarCard: document.getElementById("lidar-card"), lidarExpand: document.getElementById("lidar-expand"),
   lidarConn: document.getElementById("lidar-conn"),
   lidarM: document.getElementById("lidar-m"), lidarCanvas: document.getElementById("lidar-canvas"),
@@ -1389,10 +1393,26 @@ function renderState(s) {
 
   // health
   if (typeof s.hottestTemp === "number" && s.hottestTemp >= 0) {
-    els.vTemp.textContent = s.hottestTemp.toFixed(0) + "°C" + (s.hottestJoint >= 0 ? ` (#${s.hottestJoint})` : "")
-    els.vTemp.className = "v" + (s.hottestTemp > 75 ? " hot" : "")
+    const motor = motorName(s.hottestJoint)
+    const level = s.hottestTemp >= TEMP_HOT ? "err" : s.hottestTemp >= TEMP_WARM ? "warn" : "ok"
+    els.vTemp.textContent = s.hottestTemp.toFixed(0) + "°C" + (motor ? ` (${motor})` : "")
+    els.vTemp.className = "v" + (level === "err" ? " hot" : "")
+    els.temp.style.display = ""
+    els.tempT.textContent = s.hottestTemp.toFixed(0) + "°C" + (motor ? " " + motor : "")
+    els.temp.className = "pill " + level
   }
 
+}
+
+// Hottest-motor pill thresholds (°C). The G1's joint motors derate well above these.
+const TEMP_WARM = 60
+const TEMP_HOT = 75
+
+// motor_state index i is the i-th revolute joint in JOINTS, e.g. 22 -> "R shoulder pitch".
+function motorName(index) {
+  const joint = index >= 0 ? JOINTS.filter(j => j.t === "r")[index] : null
+  if (!joint) { return index >= 0 ? "#" + index : "" }
+  return joint.n.replace(/_joint$/, "").replace(/^left_/, "L ").replace(/^right_/, "R ").replaceAll("_", " ")
 }
 
 // ── event bus from the backend ──
