@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-# G1 black box: a ~1 MB rolling jsonl of FSM, IMU, joint angles and motor temps.
+# G1 black box: a 15 MB rolling jsonl of FSM, IMU, joint angles and motor temps.
 #
 # Read-only — it only subscribes to rt/lowstate and asks the loco service for its
 # FSM id; it never commands the robot. Runs on the Jetson from ~/dimos/.venv
 # (which has unitree_sdk2py), independent of the dash, so it keeps recording
 # when the dash or its helper is down.
 #
-#   blackbox.jsonl + blackbox.1.jsonl   two halves of 512 KB, ~1 MB total
-#   falls/<utc>.jsonl                   both halves, frozen 5 s after the FSM
-#                                       changes or the torso tips past 45°
+#   blackbox.jsonl + blackbox.1.jsonl   two halves of 7.5 MB, ~1 h at 10 Hz
+#   falls/<utc>.jsonl                   the last 1 MB (~4 min), frozen 5 s after
+#                                       the FSM changes or the torso tips past 45°
 #
 # One line per sample (10 Hz):
 #   {"t": iso utc, "tick": ms, "fsm": loco FSM id, "mm": mode_machine,
@@ -26,7 +26,8 @@ from unitree_sdk2py.g1.loco.g1_loco_client import LocoClient
 from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowState_
 
 JOINT_COUNT = 29
-HALF_BYTES = 512 * 1024
+HALF_BYTES = 15 * 1024 * 1024 // 2
+FALL_BYTES = 1024 * 1024
 SAMPLE_PERIOD = 0.1
 FSM_PERIOD = 0.5
 TIP_RAD = math.radians(45)
@@ -91,11 +92,15 @@ class BlackBox:
         with self.lock:
             self.file.flush()
             name = os.path.join(self.falls_dir, utc_now().replace(":", "-") + ".jsonl")
-            with open(name, "w") as out:
-                for part in (self.old_path, self.path):
-                    if os.path.exists(part):
-                        with open(part) as source:
-                            out.write(source.read())
+            tail = b""
+            for part in (self.old_path, self.path):
+                if os.path.exists(part):
+                    with open(part, "rb") as source:
+                        tail = (tail + source.read())[-FALL_BYTES:]
+            # drop the partial first line the byte cut left behind
+            tail = tail[tail.find(b"\n") + 1:] if len(tail) == FALL_BYTES else tail
+            with open(name, "wb") as out:
+                out.write(tail)
         for stale in sorted(os.listdir(self.falls_dir))[:-FALLS_KEPT]:
             os.remove(os.path.join(self.falls_dir, stale))
 
