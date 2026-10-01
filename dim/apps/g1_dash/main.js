@@ -40,11 +40,13 @@ let backendNote = null
 let cachedPrebuiltBin
 async function resolvePrebuiltBin() {
     if (cachedPrebuiltBin !== undefined) return cachedPrebuiltBin
-    const path = `${HELPER_DIR}/bin/g1_helper-${Deno.build.os}-${Deno.build.arch}`
-    try {
-        const info = await Deno.stat(path)
-        if (info.isFile) { cachedPrebuiltBin = path; return path }
-    } catch { /* not shipped for this platform — fall back to nix */ }
+    // shipped binary, else the one the install step (`nix run .#install`) built into ./g1_helper_cpp/result
+    for (const path of [`${HELPER_DIR}/bin/g1_helper-${Deno.build.os}-${Deno.build.arch}`, `${HELPER_DIR}/result/bin/g1_helper`]) {
+        try {
+            const info = await Deno.stat(path)
+            if (info.isFile) { cachedPrebuiltBin = path; return path }
+        } catch { /* not here — try the next */ }
+    }
     cachedPrebuiltBin = null
     return null
 }
@@ -86,6 +88,14 @@ async function start() {
     // Prefer the shipped prebuilt binary (instant); else `nix run` (compiles on
     // first launch). Both speak the same newline-JSON stdio protocol, so
     // everything below — the stdout event loop, the restart loop — is identical.
+    if (Deno.build.os !== "linux") {
+        // the helper (and its flake) is Linux-only, so don't retry a `nix run` that can never build here
+        backendNote = "G1 Dash's onboard helper only runs on Linux (the G1's Jetson). " +
+            "This machine can show the panel, but install the app on the robot to drive it."
+        pushStatus()
+        console.error(`g1_dash: helper is Linux-only, not starting it on ${Deno.build.os}`)
+        return
+    }
     const prebuilt = await resolvePrebuiltBin()
     backendNote = null
     let cmd, args

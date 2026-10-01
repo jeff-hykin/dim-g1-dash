@@ -1,0 +1,13 @@
+name: dim-g1-dash
+install: nix run .#install
+apps:
+    - name: g1_dash
+      title: G1 Dash
+      icon: dim/apps/g1_dash/frontend/icon.svg
+      frontend: dim/apps/g1_dash/frontend
+      backend:
+          dim_app: dim/apps/g1_dash/main.js
+requires:
+    dimos-desktop:
+        version: ">=0.2.0"
+        apis: { app.frontend: 1, app.dim_app: 1 }

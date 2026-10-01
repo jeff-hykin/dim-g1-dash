@@ -124,6 +124,17 @@ browser panel  ⇄  main.js (Deno)  ⇄  g1_helper (C++)  ⇄  MID360 · RealSen
 
 ## Install
 
+### dimOS Desktop
+
+```sh
+dimos-desktop install https://github.com/jeff-hykin/dim-g1-dash --ref dimos-desktop2
+```
+
+The install step (`nix run .#install`) caches the backend's imports and readies the helper: the shipped one on the
+Jetson (aarch64 Linux), a nix build on x86_64 Linux. On a Mac only the panel loads (the helper is Linux-only).
+
+### Old dashboard
+
 ```sh
 dim install https://github.com/jeff-hykin/dim-g1-dash
 ```
