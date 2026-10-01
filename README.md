@@ -130,8 +130,9 @@ browser panel  ⇄  main.js (Deno)  ⇄  g1_helper (C++)  ⇄  MID360 · RealSen
 dimos-desktop install https://github.com/jeff-hykin/dim-g1-dash --ref dimos-desktop2
 ```
 
-The install step (`nix run .#install`) caches the backend's imports and readies the helper: the shipped one on the
-Jetson (aarch64 Linux), a nix build on x86_64 Linux. On a Mac only the panel loads (the helper is Linux-only).
+Desktop runs `nix build .#dimosApp`, which wraps the frontend and backend as a `dimos-app-server` and readies the helper:
+the shipped one on the Jetson (aarch64 Linux), a nix build on x86_64 Linux. On a Mac only the panel loads (the helper is
+Linux-only).
 
 ### Old dashboard
 
@@ -158,7 +159,6 @@ dim/apps/g1_dash/
   app.yaml            title
   frontend/
     index.html        the panel — camera, 3D lidar (three.js), telemetry, controls
-    icon.svg          rail icon (humanoid)
   main.js             backend — runs the C++ helper, relays over the app-bus
   g1_helper_cpp/      C++ helper — MID360 + RealSense + unitree_sdk2, JSON over stdio
     bin/              shipped prebuilts, preferred over building

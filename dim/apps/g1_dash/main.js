@@ -40,8 +40,8 @@ let backendNote = null
 let cachedPrebuiltBin
 async function resolvePrebuiltBin() {
     if (cachedPrebuiltBin !== undefined) return cachedPrebuiltBin
-    // shipped binary, else the one the install step (`nix run .#install`) built into ./g1_helper_cpp/result
-    for (const path of [`${HELPER_DIR}/bin/g1_helper-${Deno.build.os}-${Deno.build.arch}`, `${HELPER_DIR}/result/bin/g1_helper`]) {
+    // the one `nix build .#dimosApp` built for this system (G1_HELPER), else the shipped binary
+    for (const path of [Deno.env.get("G1_HELPER"), `${HELPER_DIR}/bin/g1_helper-${Deno.build.os}-${Deno.build.arch}`].filter(Boolean)) {
         try {
             const info = await Deno.stat(path)
             if (info.isFile) { cachedPrebuiltBin = path; return path }
