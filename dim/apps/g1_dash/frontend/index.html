@@ -1485,7 +1485,8 @@ function heartbeat() {
     const locoAge = Date.now() - lastLocoAt
     const pongAge = Date.now() - lastPongAt
     const linkDead = lastPongAt !== 0 && pongAge > PONG_DEAD_MS
-    if (!linkDead && locoAge < LOCO_STALE_MS) {
+    // no loco event ever (e.g. the helper isn't running): nothing to call stale, MODE already says "—"
+    if (!linkDead && (lastLocoAt === 0 || locoAge < LOCO_STALE_MS)) {
         return
     }
     const seconds = Math.round((linkDead ? pongAge : locoAge) / 1000)
