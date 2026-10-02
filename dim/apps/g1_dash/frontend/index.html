@@ -18,6 +18,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
+<meta name="color-scheme" content="dark" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>G1 Dash · DimOS</title>
 <link rel="stylesheet" href="theme.css" />
@@ -72,8 +73,8 @@
 
   .pill { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 600;
     letter-spacing: .04em; text-transform: uppercase; color: rgba(255,255,255,.85);
-    background: color-mix(in oklch, black 46%, transparent); backdrop-filter: blur(4px);
-    border: 1px solid color-mix(in oklch, white 16%, transparent); border-radius: 999px; padding: 5px 11px; }
+    background: color-mix(in srgb, black 46%, transparent); backdrop-filter: blur(4px);
+    border: 1px solid color-mix(in srgb, white 16%, transparent); border-radius: 999px; padding: 5px 11px; }
   .pill .d { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
   .pill.ok { color: color-mix(in oklch, var(--ok) 62%, white); }
   .pill.warn { color: color-mix(in oklch, #f4b740 70%, white); }
@@ -83,8 +84,8 @@
   /* per-subsystem dots (unitree / lidar / camera) */
   .subs { display: inline-flex; align-items: center; gap: 10px; font-size: 10px; letter-spacing: .05em;
     text-transform: uppercase; color: rgba(255,255,255,.7);
-    background: color-mix(in oklch, black 46%, transparent); backdrop-filter: blur(4px);
-    border: 1px solid color-mix(in oklch, white 16%, transparent); border-radius: 999px; padding: 5px 12px; }
+    background: color-mix(in srgb, black 46%, transparent); backdrop-filter: blur(4px);
+    border: 1px solid color-mix(in srgb, white 16%, transparent); border-radius: 999px; padding: 5px 12px; }
   .subs .s { display: inline-flex; align-items: center; gap: 5px; }
   .subs .s .d { width: 7px; height: 7px; border-radius: 50%; background: var(--muted-fg); }
   .subs .s.up .d { background: var(--ok); }
@@ -95,21 +96,21 @@
 
   .mode { display: inline-flex; align-items: center; cursor: pointer; font-size: 11px; font-weight: 700; letter-spacing: .05em;
     text-transform: uppercase; color: rgba(255,255,255,.82);
-    background: color-mix(in oklch, black 46%, transparent); backdrop-filter: blur(4px);
-    border: 1px solid color-mix(in oklch, white 16%, transparent); border-radius: 999px; padding: 5px 12px; }
-  .mode:hover { border-color: color-mix(in oklch, white 34%, transparent); }
+    background: color-mix(in srgb, black 46%, transparent); backdrop-filter: blur(4px);
+    border: 1px solid color-mix(in srgb, white 16%, transparent); border-radius: 999px; padding: 5px 12px; }
+  .mode:hover { border-color: color-mix(in srgb, white 34%, transparent); }
   .mode.copied { color: var(--primary-fg); background-color: var(--primary); border-color: var(--primary); }
-  .mode.walking { color: color-mix(in oklch, var(--primary) 65%, white); border-color: color-mix(in oklch, var(--primary) 40%, transparent); }
+  .mode.walking { color: color-mix(in oklch, var(--primary) 65%, white); border-color: color-mix(in srgb, var(--primary) 40%, transparent); }
   /* collapse / limp — the robot is not holding itself up */
   /* the robot stopped reporting — the text is history, not state */
-  .mode.stale { color: #ffb02e; border-color: color-mix(in oklch, #ffb02e 55%, transparent);
-    background-color: color-mix(in oklch, #ffb02e 16%, color-mix(in oklch, black 46%, transparent)); }
-  .mode.damp { color: #ff6a5b; border-color: color-mix(in oklch, #ff2626 45%, transparent);
-    background-color: color-mix(in oklch, #ff2626 14%, color-mix(in oklch, black 46%, transparent)); }
+  .mode.stale { color: #ffb02e; border-color: color-mix(in srgb, #ffb02e 55%, transparent);
+    background-color: color-mix(in srgb, #ffb02e 16%, color-mix(in oklch, black 46%, transparent)); }
+  .mode.damp { color: #ff6a5b; border-color: color-mix(in srgb, #ff2626 45%, transparent);
+    background-color: color-mix(in srgb, #ff2626 14%, color-mix(in oklch, black 46%, transparent)); }
 
   .estop { appearance: none; cursor: pointer; font: inherit; font-size: 12px; font-weight: 800;
     letter-spacing: .08em; text-transform: uppercase; color: #fff;
-    background: color-mix(in oklch, var(--danger) 82%, black); border: 1px solid color-mix(in oklch, white 30%, transparent);
+    background: color-mix(in oklch, var(--danger) 82%, black); border: 1px solid color-mix(in srgb, white 30%, transparent);
     border-radius: var(--radius); padding: 8px 15px; box-shadow: 0 6px 20px -8px rgba(220,40,40,.8);
     transition: transform .1s, background .14s; }
   .estop:hover { background: var(--danger); }
@@ -123,8 +124,8 @@
     display: flex; flex-direction: column; gap: 10px; }
   .rail { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin;
     display: flex; flex-direction: column; gap: 10px; }
-  .card { background: color-mix(in oklch, #0c1017 74%, transparent); backdrop-filter: blur(7px);
-    border: 1px solid color-mix(in oklch, white 12%, transparent); border-radius: calc(var(--radius) * 1.3);
+  .card { background: color-mix(in srgb, #0c1017 74%, transparent); backdrop-filter: blur(7px);
+    border: 1px solid color-mix(in srgb, white 12%, transparent); border-radius: calc(var(--radius) * 1.3);
     padding: 12px 13px; box-shadow: 0 12px 34px -18px rgba(0,0,0,.7); }
   /* headers are the collapse control for their card */
   .card h3 { margin: 0 0 9px; font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
@@ -146,14 +147,14 @@
   .speed input[type=range] { appearance: none; -webkit-appearance: none; width: 100%; height: 22px;
     margin: 0 0 5px; background: transparent; cursor: pointer; touch-action: pan-y; }
   .speed input[type=range]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px;
-    background: color-mix(in oklch, white 16%, transparent); }
+    background: color-mix(in srgb, white 16%, transparent); }
   .speed input[type=range]::-moz-range-track { height: 4px; border-radius: 2px;
-    background: color-mix(in oklch, white 16%, transparent); }
+    background: color-mix(in srgb, white 16%, transparent); }
   .speed input[type=range]::-webkit-slider-thumb { appearance: none; -webkit-appearance: none;
     width: 18px; height: 18px; margin-top: -7px; border-radius: 50%; background: var(--primary);
-    border: 2px solid color-mix(in oklch, black 55%, transparent); }
+    border: 2px solid color-mix(in srgb, black 55%, transparent); }
   .speed input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%;
-    background: var(--primary); border: 2px solid color-mix(in oklch, black 55%, transparent); }
+    background: var(--primary); border: 2px solid color-mix(in srgb, black 55%, transparent); }
   .speed-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px;
     font-size: 10px; color: var(--muted-fg); }
   .speed-foot button { appearance: none; font: inherit; color: var(--muted-fg); cursor: pointer;
@@ -170,7 +171,7 @@
 
   /* attitude horizon (roll/pitch) */
   .horizon { position: relative; height: 84px; border-radius: var(--radius); overflow: hidden;
-    background: linear-gradient(#1a2740, #0a1220); border: 1px solid color-mix(in oklch, white 10%, transparent); }
+    background: linear-gradient(#1a2740, #0a1220); border: 1px solid color-mix(in srgb, white 10%, transparent); }
   .horizon .sky { position: absolute; inset: -40% -40%; background: linear-gradient(#2b4a7a 49.6%, #6b4a2b 50.4%);
     transform-origin: center; }
   .horizon .cross { position: absolute; left: 50%; top: 50%; width: 46px; height: 1px; background: var(--primary);
@@ -186,7 +187,7 @@
   .pose-card canvas { display: block; width: 100% !important; height: 100% !important; }
   .pose-head { position: absolute; top: 0; left: 0; right: 0; z-index: 2;
     display: flex; align-items: center; gap: 8px; padding: 8px 10px;
-    background: linear-gradient(to bottom, color-mix(in oklch, #0c1017 78%, transparent), transparent); }
+    background: linear-gradient(to bottom, color-mix(in srgb, #0c1017 78%, transparent), transparent); }
   .pose-head h3 { margin: 0; font-size: 10.5px; font-weight: 700; letter-spacing: .09em;
     text-transform: uppercase; color: var(--muted-fg); }
   .pose-head .m { font-family: var(--mono); font-size: 10.5px; color: var(--muted-fg); margin-left: auto; }
@@ -205,8 +206,8 @@
   .lidar-head h3 { margin: 0; pointer-events: auto; }
   .lidar-head .m { font-family: var(--mono); font-size: 10.5px; color: var(--muted-fg); }
   .lidar-head .expand { pointer-events: auto; margin-left: auto; appearance: none; cursor: pointer; font: inherit;
-    font-size: 11px; color: rgba(255,255,255,.8); background: color-mix(in oklch, black 40%, transparent);
-    border: 1px solid color-mix(in oklch, white 16%, transparent); border-radius: var(--radius); padding: 3px 8px; }
+    font-size: 11px; color: rgba(255,255,255,.8); background: color-mix(in srgb, black 40%, transparent);
+    border: 1px solid color-mix(in srgb, white 16%, transparent); border-radius: var(--radius); padding: 3px 8px; }
   .lidar-head .expand:hover { color: #fff; border-color: var(--ring); }
 
   /* ── command dock (bottom center) ── */
@@ -216,31 +217,31 @@
     -webkit-mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent);
     mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent); }
   .dock::-webkit-scrollbar { height: 6px; }
-  .dock::-webkit-scrollbar-thumb { background: color-mix(in oklch, white 22%, transparent); border-radius: 3px; }
+  .dock::-webkit-scrollbar-thumb { background: color-mix(in srgb, white 22%, transparent); border-radius: 3px; }
   .act { appearance: none; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; letter-spacing: .03em;
-    white-space: nowrap; flex: 0 0 auto; color: #fff; background-color: color-mix(in oklch, black 44%, transparent);
-    backdrop-filter: blur(4px); border: 1px solid color-mix(in oklch, white 16%, transparent);
+    white-space: nowrap; flex: 0 0 auto; color: #fff; background-color: color-mix(in srgb, black 44%, transparent);
+    backdrop-filter: blur(4px); border: 1px solid color-mix(in srgb, white 16%, transparent);
     border-radius: var(--radius); padding: 9px 14px; transition: background-color .14s, border-color .14s; }
-  .act:hover { background-color: color-mix(in oklch, black 28%, transparent); border-color: var(--ring); }
+  .act:hover { background-color: color-mix(in srgb, black 28%, transparent); border-color: var(--ring); }
   .act:active { transform: translateY(1px); }
-  .act.good { border-color: color-mix(in oklch, var(--ok) 55%, transparent); color: color-mix(in oklch, var(--ok) 70%, white); }
+  .act.good { border-color: color-mix(in srgb, var(--ok) 55%, transparent); color: color-mix(in oklch, var(--ok) 70%, white); }
   /* the two modes that drop the robot — same red as their confirm dialog */
-  .act.bad { border-color: color-mix(in oklch, #ff2626 60%, transparent); color: #ff6a5b;
-    background-color: color-mix(in oklch, #ff2626 12%, color-mix(in oklch, black 44%, transparent)); }
+  .act.bad { border-color: color-mix(in srgb, #ff2626 60%, transparent); color: #ff6a5b;
+    background-color: color-mix(in srgb, #ff2626 12%, color-mix(in oklch, black 44%, transparent)); }
   .act.bad:hover { border-color: #ff5b4d; color: #ff8577;
-    background-color: color-mix(in oklch, #ff2626 22%, color-mix(in oklch, black 28%, transparent)); }
-  .act.bad.active-mode { background-color: color-mix(in oklch, #ff2626 34%, transparent);
+    background-color: color-mix(in srgb, #ff2626 22%, color-mix(in oklch, black 28%, transparent)); }
+  .act.bad.active-mode { background-color: color-mix(in srgb, #ff2626 34%, transparent);
     border-color: #ff5b4d; color: #fff; }
   /* one-click but consequential — takes a device off another service */
-  .act.warn { border-color: color-mix(in oklch, #ffb300 62%, transparent); color: #ffc94d;
-    background-color: color-mix(in oklch, #ffb300 12%, color-mix(in oklch, black 44%, transparent)); }
+  .act.warn { border-color: color-mix(in srgb, #ffb300 62%, transparent); color: #ffc94d;
+    background-color: color-mix(in srgb, #ffb300 12%, color-mix(in oklch, black 44%, transparent)); }
   .act.warn:hover { border-color: #ffc93d; color: #ffd978;
-    background-color: color-mix(in oklch, #ffb300 22%, color-mix(in oklch, black 28%, transparent)); }
+    background-color: color-mix(in srgb, #ffb300 22%, color-mix(in oklch, black 28%, transparent)); }
   /* greyed out: this command needs a mode the robot isn't in (title says which) */
   .act:disabled { opacity: .38; cursor: not-allowed; }
-  .act:disabled:hover { background-color: color-mix(in oklch, black 44%, transparent); border-color: color-mix(in oklch, white 16%, transparent); }
+  .act:disabled:hover { background-color: color-mix(in srgb, black 44%, transparent); border-color: color-mix(in srgb, white 16%, transparent); }
   /* the mode the robot is currently in */
-  .act.active-mode { background-color: color-mix(in oklch, var(--primary) 26%, transparent);
+  .act.active-mode { background-color: color-mix(in srgb, var(--primary) 26%, transparent);
     border-color: var(--primary); color: #fff; }
 
   /* ── drive pad (bottom right) ──
@@ -250,10 +251,10 @@
   .dpad { position: absolute; right: 16px; bottom: 16px; z-index: 9;
     display: grid; grid-template-columns: repeat(3, 46px); grid-template-rows: repeat(2, 46px); gap: 6px; }
   .db { appearance: none; cursor: pointer; user-select: none; touch-action: none; font: inherit; font-size: 16px;
-    color: #fff; background: color-mix(in oklch, black 50%, transparent); backdrop-filter: blur(4px);
-    border: 1px solid color-mix(in oklch, white 15%, transparent); border-radius: var(--radius);
+    color: #fff; background: color-mix(in srgb, black 50%, transparent); backdrop-filter: blur(4px);
+    border: 1px solid color-mix(in srgb, white 15%, transparent); border-radius: var(--radius);
     display: flex; align-items: center; justify-content: center; }
-  .db:hover { background: color-mix(in oklch, black 38%, transparent); }
+  .db:hover { background: color-mix(in srgb, black 38%, transparent); }
   .db.held { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
   /* driving needs a walking mode — dimmed, but still clickable so the toast explains */
   .db.blocked { opacity: .35; }
@@ -261,25 +262,25 @@
   .db.tl { grid-area: 2 / 1; } .db.back { grid-area: 2 / 2; } .db.tr { grid-area: 2 / 3; }
 
   .vel { position: absolute; right: 16px; bottom: 116px; z-index: 9; font-family: var(--mono); font-size: 10.5px;
-    color: #fff; background: color-mix(in oklch, black 52%, transparent); backdrop-filter: blur(4px);
-    border: 1px solid color-mix(in oklch, white 14%, transparent); border-radius: var(--radius); padding: 6px 9px;
+    color: #fff; background: color-mix(in srgb, black 52%, transparent); backdrop-filter: blur(4px);
+    border: 1px solid color-mix(in srgb, white 14%, transparent); border-radius: var(--radius); padding: 6px 9px;
     min-width: 128px; }
-  .vel.on { border-color: color-mix(in oklch, var(--primary) 60%, transparent); }
+  .vel.on { border-color: color-mix(in srgb, var(--primary) 60%, transparent); }
   .vel .row { display: flex; justify-content: space-between; gap: 10px; }
 
   /* Hidden on desktop, where the panels are always on screen. */
   .panels-btn { display: none; appearance: none; cursor: pointer; font: inherit; font-size: 17px; line-height: 1;
-    color: #fff; background: color-mix(in oklch, black 46%, transparent); backdrop-filter: blur(4px);
-    border: 1px solid color-mix(in oklch, white 16%, transparent); border-radius: var(--radius); padding: 7px 10px; }
+    color: #fff; background: color-mix(in srgb, black 46%, transparent); backdrop-filter: blur(4px);
+    border: 1px solid color-mix(in srgb, white 16%, transparent); border-radius: var(--radius); padding: 7px 10px; }
   .scrim { display: none; position: absolute; inset: 0; z-index: 7;
-    background: color-mix(in oklch, black 55%, transparent); }
+    background: color-mix(in srgb, black 55%, transparent); }
   .scrim.open { display: block; }
 
   /* transient warning toast */
   .toast { position: absolute; left: 50%; top: 60px; transform: translate(-50%, -14px); z-index: 20;
     max-width: min(440px, 88vw); padding: 11px 16px; font-size: 13px; font-weight: 600; line-height: 1.35;
     color: #fff; text-align: center; background: color-mix(in oklch, #b4460b 82%, black); backdrop-filter: blur(4px);
-    border: 1px solid color-mix(in oklch, white 24%, transparent); border-radius: var(--radius);
+    border: 1px solid color-mix(in srgb, white 24%, transparent); border-radius: var(--radius);
     box-shadow: 0 10px 30px -10px rgba(0,0,0,.6); opacity: 0; pointer-events: none;
     transition: opacity .18s ease, transform .18s ease; }
   .toast.show { opacity: 1; transform: translate(-50%, 0); }
@@ -305,10 +306,10 @@
   .confirm-actions { display: flex; gap: 12px; justify-content: center; }
   .confirm-actions button { appearance: none; cursor: pointer; font: inherit; font-weight: 800;
     font-size: 13px; letter-spacing: .06em; text-transform: uppercase; border-radius: var(--radius);
-    padding: 12px 22px; border: 1px solid color-mix(in oklch, white 28%, transparent); color: #fff; }
+    padding: 12px 22px; border: 1px solid color-mix(in srgb, white 28%, transparent); color: #fff; }
   .confirm-actions button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
-  #confirm-cancel { background: color-mix(in oklch, black 40%, transparent); }
-  #confirm-cancel:hover { background: color-mix(in oklch, black 20%, transparent); }
+  #confirm-cancel { background: color-mix(in srgb, black 40%, transparent); }
+  #confirm-cancel:hover { background: color-mix(in srgb, black 20%, transparent); }
   #confirm-go:active { transform: translateY(1px); }
 
   /* red tier: damp / zero-torque — the robot collapses */
@@ -335,20 +336,20 @@
   /* ── "/" action search palette ── */
   .palette { position: absolute; left: 50%; bottom: 78px; transform: translateX(-50%); z-index: 25;
     display: none; flex-direction: column; width: min(380px, 90vw);
-    background: color-mix(in oklch, #0c1017 88%, transparent); backdrop-filter: blur(8px);
-    border: 1px solid color-mix(in oklch, white 18%, transparent); border-radius: calc(var(--radius) * 1.3);
+    background: color-mix(in srgb, #0c1017 88%, transparent); backdrop-filter: blur(8px);
+    border: 1px solid color-mix(in srgb, white 18%, transparent); border-radius: calc(var(--radius) * 1.3);
     box-shadow: 0 16px 44px -14px rgba(0,0,0,.8); overflow: hidden; }
   .palette.show { display: flex; }
   .palette input { appearance: none; border: none; outline: none; background: transparent; color: #fff;
     font: inherit; font-size: 13px; padding: 11px 13px;
-    border-bottom: 1px solid color-mix(in oklch, white 12%, transparent); }
+    border-bottom: 1px solid color-mix(in srgb, white 12%, transparent); }
   .palette input::placeholder { color: var(--muted-fg); }
   .palette-list { max-height: 260px; overflow-y: auto; padding: 5px; scrollbar-width: thin; }
   .palette-item { display: flex; align-items: center; gap: 8px; padding: 7px 9px;
     border-radius: var(--radius); font-size: 12.5px; color: rgba(255,255,255,.9); cursor: pointer; }
   .palette-item .hint { margin-left: auto; font-size: 10px; letter-spacing: .05em;
     text-transform: uppercase; color: var(--muted-fg); }
-  .palette-item.sel { background: color-mix(in oklch, var(--primary) 30%, transparent); color: #fff; }
+  .palette-item.sel { background: color-mix(in srgb, var(--primary) 30%, transparent); color: #fff; }
   .palette-item.red-danger .hint { color: #ff5b4d; }
   .palette-item.amber-danger .hint { color: #ffc14d; }
   /* blocked: needs a mode the robot isn't in — the hint says which */
@@ -356,7 +357,7 @@
   .palette-item.blocked .hint { text-transform: none; letter-spacing: 0; }
   .palette-empty { padding: 10px 12px; font-size: 12px; color: var(--muted-fg); }
   .palette-foot { padding: 7px 12px; font-size: 10px; letter-spacing: .03em; color: var(--muted-fg);
-    border-top: 1px solid color-mix(in oklch, white 10%, transparent); font-family: var(--mono); }
+    border-top: 1px solid color-mix(in srgb, white 10%, transparent); font-family: var(--mono); }
   /* ── phone ──────────────────────────────────────────────────────────────────
      A phone has no hover and no keyboard, so the two things you cannot do
      without — drive and the commands — get the permanent screen space, and the
@@ -384,8 +385,8 @@
 
     /* telemetry becomes a drawer — off-canvas until ☰ */
     .left-col { top: 0; bottom: 0; left: 0; width: min(80vw, 300px); z-index: 12;
-      padding: calc(var(--topbar-h, 52px) + 8px) 10px 10px; background: color-mix(in oklch, #06080c 92%, transparent);
-      backdrop-filter: blur(10px); border-right: 1px solid color-mix(in oklch, white 12%, transparent);
+      padding: calc(var(--topbar-h, 52px) + 8px) 10px 10px; background: color-mix(in srgb, #06080c 92%, transparent);
+      backdrop-filter: blur(10px); border-right: 1px solid color-mix(in srgb, white 12%, transparent);
       transform: translateX(-102%); transition: transform .18s ease; }
     .left-col.open { transform: translateX(0); }
     .lidar-card { flex: 0 0 240px; }
@@ -412,7 +413,7 @@
 
 </style>
 </head>
-<body>
+<body class="science dark">
   <div class="stage">
     <div class="cam-wrap" id="cam-wrap">
       <img id="cam" alt="G1 camera" />
@@ -569,8 +570,6 @@ import { DimAppFrontend } from "https://esm.sh/gh/jeff-hykin/dim-app@v0.5.0/fron
 import * as THREE from "https://esm.sh/three@0.160.0"
 import { OrbitControls } from "https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js"
 
-// follow the shell's light/dark like the other dim apps
-;(function () { const m = matchMedia("(prefers-color-scheme: light)"); const a = () => document.body.classList.toggle("dark", !m.matches); a(); m.addEventListener("change", a) })()
 
 const dimApp = new DimAppFrontend()
 
