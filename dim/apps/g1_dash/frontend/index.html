@@ -20,7 +20,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>G1 Dash · DimOS</title>
-<link rel="stylesheet" href="/assets/theme.css" />
+<link rel="stylesheet" href="theme.css" />
 <style>
   html, body { height: 100%; margin: 0; overflow: hidden; }
   /* Every tappable control. iOS ignores unprefixed `user-select`, so a long
@@ -565,7 +565,7 @@
   </div>
 
 <script type="module">
-import { DimAppFrontend } from "https://esm.sh/gh/jeff-hykin/dim-app@v0.3.0/frontend.js"
+import { DimAppFrontend } from "https://esm.sh/gh/jeff-hykin/dim-app@v0.5.0/frontend.js"
 import * as THREE from "https://esm.sh/three@0.160.0"
 import { OrbitControls } from "https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js"
 
@@ -775,7 +775,7 @@ function updateCamPlaceholder(streamMessage) {
       <code>dim install https://github.com/jeff-hykin/dim-g1-dash</code> and open the panel
       served from the robot.</p>
       <p>If your robot uses a different LAN plan, set <code>G1_LIDAR_IP</code> (and
-      <code>G1_NET_IFACE</code> for DDS) in the dashboard's environment.</p>
+      <code>G1_NET_IFACE</code> for DDS) in Desktop's environment.</p>
     </div>`
     return
   }

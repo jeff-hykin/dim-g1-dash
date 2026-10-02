@@ -2,7 +2,7 @@
     description = "dim-g1-dash: onboard Unitree G1 dashboard, as a dimOS Desktop app";
 
     inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
-    inputs.dim-app.url = "github:jeff-hykin/dim-app/v0.4.0";
+    inputs.dim-app.url = "github:jeff-hykin/dim-app/v0.5.0";
     inputs.g1-helper.url = "path:./dim/apps/g1_dash/g1_helper_cpp";
 
     outputs = { self, nixpkgs, dim-app, g1-helper }: {

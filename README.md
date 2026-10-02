@@ -1,6 +1,6 @@
 # dim-g1-dash
 
-A [DimOS dashboard](https://github.com/jeff-hykin/dim-app) app for driving and
+A [dimOS Desktop](https://github.com/dimensionalOS/dimos-desktop) app for driving and
 monitoring a **Unitree G1** humanoid — running *onboard the robot's Jetson*.
 
 Unlike [dim-go2-dash](https://github.com/jeff-hykin/dim-go2-dash) (which discovers
