@@ -205,10 +205,10 @@
   /* the head is click-through except for its controls (the h3 collapses) */
   .lidar-head h3 { margin: 0; pointer-events: auto; }
   .lidar-head .m { font-family: var(--mono); font-size: 10.5px; color: var(--muted-fg); }
-  .lidar-head .expand { pointer-events: auto; margin-left: auto; appearance: none; cursor: pointer; font: inherit;
+  .lidar-head .expand, .pose-head .expand { pointer-events: auto; margin-left: auto; appearance: none; cursor: pointer; font: inherit;
     font-size: 11px; color: rgba(255,255,255,.8); background: color-mix(in srgb, black 40%, transparent);
     border: 1px solid color-mix(in srgb, white 16%, transparent); border-radius: var(--radius); padding: 3px 8px; }
-  .lidar-head .expand:hover { color: #fff; border-color: var(--ring); }
+  .lidar-head .expand:hover, .pose-head .expand:hover { color: #fff; border-color: var(--ring); }
 
   /* ── command dock (bottom center) ── */
   .dock { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 9;
