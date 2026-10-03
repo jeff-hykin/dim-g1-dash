@@ -1,7 +1,35 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" color="#9972d7" role="img" aria-label="G1 Dashboard">
-  <!-- dimOS app icon set: 24 grid, 2px round strokes, one hue per app at equal lightness, 24% tint for the duotone fill -->
-  <circle cx="12" cy="4.5" r="2.5"/>
-  <path d="M10 9h4a2 2 0 0 1 2 2v4H8v-4a2 2 0 0 1 2-2z" fill="currentColor" fill-opacity=".24" stroke="none"/>
-  <path d="M10 9h4a2 2 0 0 1 2 2v4H8v-4a2 2 0 0 1 2-2z"/>
-  <path d="M8 10.5l-3 4.5M16 10.5l3 4.5M10 15v6.5M14 15v6.5"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="G1 Dashboard">
+  <!-- dimOS app icon set: Unitree G1 head in 3/4 view, traced from a photo; neon face ring and light bar on a dark glass tile -->
+  <defs>
+    <radialGradient id="tile" cx=".5" cy=".18" r=".95"><stop offset="0" stop-color="#0d1d3a"/><stop offset="1" stop-color="#07070f"/></radialGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".13"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".45"/><stop offset=".25" stop-color="#fff" stop-opacity=".1"/><stop offset="1" stop-color="#fff" stop-opacity=".06"/></linearGradient>
+    <linearGradient id="helm" gradientUnits="userSpaceOnUse" x1="20" y1="8" x2="48" y2="30"><stop offset="0" stop-color="#9aa3b4"/><stop offset=".5" stop-color="#555d6c"/><stop offset="1" stop-color="#262a33"/></linearGradient>
+    <linearGradient id="dark" gradientUnits="userSpaceOnUse" x1="0" y1="28" x2="0" y2="62"><stop offset="0" stop-color="#3c4352"/><stop offset="1" stop-color="#191c24"/></linearGradient>
+    <linearGradient id="plate" gradientUnits="userSpaceOnUse" x1="14" y1="15" x2="32" y2="48"><stop offset="0" stop-color="#16407a"/><stop offset="1" stop-color="#0a1a38"/></linearGradient>
+    <linearGradient id="neon" gradientUnits="userSpaceOnUse" x1="12" y1="15" x2="34" y2="48"><stop offset="0" stop-color="#b8f8ff"/><stop offset=".55" stop-color="#3fa8ff"/><stop offset="1" stop-color="#6f6bff"/></linearGradient>
+    <linearGradient id="bar" gradientUnits="userSpaceOnUse" x1="16" y1="0" x2="33" y2="0"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#7fe6ff"/></linearGradient>
+    <filter id="bloom" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="1.8"/></filter>
+    <linearGradient id="neckg" gradientUnits="userSpaceOnUse" x1="28.6" y1="0" x2="36.4" y2="0"><stop offset="0" stop-color="#2a2f3a"/><stop offset=".3" stop-color="#6a7283"/><stop offset=".55" stop-color="#3c4250"/><stop offset="1" stop-color="#1b1f27"/></linearGradient>
+    <linearGradient id="fadeg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset=".55" stop-color="#fff"/><stop offset="1" stop-color="#000"/></linearGradient>
+    <mask id="neckfade" maskUnits="userSpaceOnUse" x="0" y="40" width="64" height="24"><rect x="0" y="40" width="64" height="20" fill="url(#fadeg)"/></mask>
+    <clipPath id="clip"><path d="M16 2H48A14 14 0 0 1 62 16V48A14 14 0 0 1 48 62H16A14 14 0 0 1 2 48V16A14 14 0 0 1 16 2Z"/></clipPath>
+  </defs>
+  <path d="M16 2H48A14 14 0 0 1 62 16V48A14 14 0 0 1 48 62H16A14 14 0 0 1 2 48V16A14 14 0 0 1 16 2Z" fill="url(#tile)"/>
+  <path d="M16 3H48A13 13 0 0 1 61 16V24H3V16A13 13 0 0 1 16 3Z" fill="url(#sheen)"/>
+  <g clip-path="url(#clip)">
+    <path d="M28.6 45L36.2 43.93C35.4 49 34.6 53 34.33 62.33L28.47 62.33C28.33 53 28.6 49 28.6 45Z" fill="url(#neckg)" mask="url(#neckfade)"/>
+    <path d="M34.87 24.33C35.44 22.96 37.42 26.49 37.8 28.07C38.18 29.64 37.51 31.64 37.13 33.8C36.76 35.96 36.71 38.58 35.53 41C34.36 43.42 30.67 48.11 30.07 48.33C29.47 48.56 31.22 44.33 31.93 42.33C32.64 40.33 33.84 39.33 34.33 36.33C34.82 33.33 34.29 25.71 34.87 24.33Z" fill="url(#dark)"/>
+    <path d="M12.4 17.33C12.62 16.76 15.46 13.08 17.4 11.67C19.34 10.26 21.9 9.47 24.07 8.87C26.23 8.27 28.12 8.02 30.4 8.07C32.68 8.11 35.34 8.33 37.73 9.13C40.12 9.93 42.77 11.36 44.73 12.87C46.7 14.38 48.44 16.42 49.53 18.2C50.62 19.98 51.09 22.09 51.27 23.53C51.44 24.98 51.24 26.11 50.6 26.87C49.96 27.62 49.27 27.76 47.4 28.07C45.53 28.38 41.46 28.58 39.4 28.73C37.34 28.89 35.82 29.96 35.07 29C34.31 28.04 35.2 24.83 34.87 23C34.53 21.17 34.31 19.36 33.07 18C31.82 16.64 30.23 15.34 27.4 14.87C24.57 14.39 18.57 14.72 16.07 15.13C13.57 15.54 12.18 17.91 12.4 17.33Z" fill="url(#helm)"/>
+    <path d="M24 10.6C30 8.6 38 9 44 12.4" fill="none" stroke="#fff" stroke-opacity=".6" stroke-width="1" stroke-linecap="round"/>
+    <ellipse cx="44" cy="19.5" rx="4.5" ry="2.6" transform="rotate(35 44 19.5)" fill="#fff" opacity=".22" filter="url(#bloom)"/>
+    <path d="M36 28.6C41 28.4 46 28.2 50 27.2" fill="none" stroke="#000" stroke-opacity=".45" stroke-width="1.2" stroke-linecap="round"/>
+    <path d="M12.4 17.33C12.93 16.09 13.57 15.43 16.07 15C18.57 14.57 24.53 14.22 27.4 14.73C30.27 15.24 32 16.63 33.27 18.07C34.53 19.5 34.69 21.29 35 23.33C35.31 25.38 35.27 28.17 35.13 30.33C35 32.5 34.76 34.33 34.2 36.33C33.64 38.33 33.02 40.51 31.8 42.33C30.58 44.16 28.47 46.27 26.87 47.27C25.27 48.27 23.6 48.49 22.2 48.33C20.8 48.18 19.38 47.56 18.47 46.33C17.56 45.11 17.16 43.11 16.73 41C16.31 38.89 16.31 35.89 15.93 33.67C15.56 31.44 14.98 29.53 14.47 27.67C13.96 25.8 13.21 24.19 12.87 22.47C12.52 20.74 11.87 18.58 12.4 17.33Z M21.67 30.87C22.78 29.6 26.38 28.62 27.67 28.73C28.96 28.84 29.29 30.22 29.4 31.53C29.51 32.84 29.18 34.51 28.33 36.6C27.49 38.69 25.38 42.93 24.33 44.07C23.29 45.2 22.62 44.69 22.07 43.4C21.51 42.11 21.07 38.42 21 36.33C20.93 34.24 20.56 32.13 21.67 30.87Z" fill="url(#plate)" fill-rule="evenodd"/>
+    <g fill="#9ff6ff" opacity=".55"><circle cx="18.8" cy="22.6" r=".6"/><circle cx="22.2" cy="21.8" r=".6"/><circle cx="25.6" cy="21.6" r=".6"/><circle cx="29" cy="21.4" r=".6"/></g>
+    <g filter="url(#bloom)" opacity=".95"><path d="M12.4 17.33C12.93 16.09 13.57 15.43 16.07 15C18.57 14.57 24.53 14.22 27.4 14.73C30.27 15.24 32 16.63 33.27 18.07C34.53 19.5 34.69 21.29 35 23.33C35.31 25.38 35.27 28.17 35.13 30.33C35 32.5 34.76 34.33 34.2 36.33C33.64 38.33 33.02 40.51 31.8 42.33C30.58 44.16 28.47 46.27 26.87 47.27C25.27 48.27 23.6 48.49 22.2 48.33C20.8 48.18 19.38 47.56 18.47 46.33C17.56 45.11 17.16 43.11 16.73 41C16.31 38.89 16.31 35.89 15.93 33.67C15.56 31.44 14.98 29.53 14.47 27.67C13.96 25.8 13.21 24.19 12.87 22.47C12.52 20.74 11.87 18.58 12.4 17.33Z" fill="none" stroke="url(#neon)" stroke-width="2.2"/>
+      <path d="M16.73 27L32.07 24.47" stroke="url(#bar)" stroke-width="2.4" stroke-linecap="round"/></g>
+    <path d="M12.4 17.33C12.93 16.09 13.57 15.43 16.07 15C18.57 14.57 24.53 14.22 27.4 14.73C30.27 15.24 32 16.63 33.27 18.07C34.53 19.5 34.69 21.29 35 23.33C35.31 25.38 35.27 28.17 35.13 30.33C35 32.5 34.76 34.33 34.2 36.33C33.64 38.33 33.02 40.51 31.8 42.33C30.58 44.16 28.47 46.27 26.87 47.27C25.27 48.27 23.6 48.49 22.2 48.33C20.8 48.18 19.38 47.56 18.47 46.33C17.56 45.11 17.16 43.11 16.73 41C16.31 38.89 16.31 35.89 15.93 33.67C15.56 31.44 14.98 29.53 14.47 27.67C13.96 25.8 13.21 24.19 12.87 22.47C12.52 20.74 11.87 18.58 12.4 17.33Z" fill="none" stroke="url(#neon)" stroke-width="2.2"/>
+      <path d="M16.73 27L32.07 24.47" stroke="url(#bar)" stroke-width="2.4" stroke-linecap="round"/>
+  </g>
+  <path d="M16 2H48A14 14 0 0 1 62 16V48A14 14 0 0 1 48 62H16A14 14 0 0 1 2 48V16A14 14 0 0 1 16 2Z" fill="none" stroke="url(#rim)" stroke-width="1"/>
 </svg>
