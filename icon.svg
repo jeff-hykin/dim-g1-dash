@@ -13,12 +13,16 @@
     <linearGradient id="neckg" gradientUnits="userSpaceOnUse" x1="28.6" y1="0" x2="36.4" y2="0"><stop offset="0" stop-color="#2a2f3a"/><stop offset=".3" stop-color="#6a7283"/><stop offset=".55" stop-color="#3c4250"/><stop offset="1" stop-color="#1b1f27"/></linearGradient>
     <linearGradient id="fadeg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset=".55" stop-color="#fff"/><stop offset="1" stop-color="#000"/></linearGradient>
     <mask id="neckfade" maskUnits="userSpaceOnUse" x="0" y="40" width="64" height="24"><rect x="0" y="40" width="64" height="20" fill="url(#fadeg)"/></mask>
+    <linearGradient id="collar" gradientUnits="userSpaceOnUse" x1="0" y1="52" x2="0" y2="60"><stop offset="0" stop-color="#596172"/><stop offset="1" stop-color="#262a33"/></linearGradient>
+    <linearGradient id="neckg2" gradientUnits="userSpaceOnUse" x1="26.4" y1="0" x2="36.6" y2="0"><stop offset="0" stop-color="#1e222b"/><stop offset=".35" stop-color="#4a5262"/><stop offset=".6" stop-color="#2e333e"/><stop offset="1" stop-color="#16191f"/></linearGradient>
+    <linearGradient id="neckg3" gradientUnits="userSpaceOnUse" x1="23" y1="0" x2="40" y2="0"><stop offset="0" stop-color="#15181e"/><stop offset=".35" stop-color="#3e4554"/><stop offset=".6" stop-color="#232731"/><stop offset="1" stop-color="#101217"/></linearGradient>
     <clipPath id="clip"><path d="M16 2H48A14 14 0 0 1 62 16V48A14 14 0 0 1 48 62H16A14 14 0 0 1 2 48V16A14 14 0 0 1 16 2Z"/></clipPath>
   </defs>
   <path d="M16 2H48A14 14 0 0 1 62 16V48A14 14 0 0 1 48 62H16A14 14 0 0 1 2 48V16A14 14 0 0 1 16 2Z" fill="url(#tile)"/>
   <path d="M16 3H48A13 13 0 0 1 61 16V24H3V16A13 13 0 0 1 16 3Z" fill="url(#sheen)"/>
   <g clip-path="url(#clip)">
-    <path d="M28.6 45L36.2 43.93C35.4 49 34.6 53 34.33 62.33L28.47 62.33C28.33 53 28.6 49 28.6 45Z" fill="url(#neckg)" mask="url(#neckfade)"/>
+    <g transform="translate(32 32) scale(1.08) translate(-31.8 -28.4)">
+    
     <path d="M34.87 24.33C35.44 22.96 37.42 26.49 37.8 28.07C38.18 29.64 37.51 31.64 37.13 33.8C36.76 35.96 36.71 38.58 35.53 41C34.36 43.42 30.67 48.11 30.07 48.33C29.47 48.56 31.22 44.33 31.93 42.33C32.64 40.33 33.84 39.33 34.33 36.33C34.82 33.33 34.29 25.71 34.87 24.33Z" fill="url(#dark)"/>
     <path d="M12.4 17.33C12.62 16.76 15.46 13.08 17.4 11.67C19.34 10.26 21.9 9.47 24.07 8.87C26.23 8.27 28.12 8.02 30.4 8.07C32.68 8.11 35.34 8.33 37.73 9.13C40.12 9.93 42.77 11.36 44.73 12.87C46.7 14.38 48.44 16.42 49.53 18.2C50.62 19.98 51.09 22.09 51.27 23.53C51.44 24.98 51.24 26.11 50.6 26.87C49.96 27.62 49.27 27.76 47.4 28.07C45.53 28.38 41.46 28.58 39.4 28.73C37.34 28.89 35.82 29.96 35.07 29C34.31 28.04 35.2 24.83 34.87 23C34.53 21.17 34.31 19.36 33.07 18C31.82 16.64 30.23 15.34 27.4 14.87C24.57 14.39 18.57 14.72 16.07 15.13C13.57 15.54 12.18 17.91 12.4 17.33Z" fill="url(#helm)"/>
     <path d="M24 10.6C30 8.6 38 9 44 12.4" fill="none" stroke="#fff" stroke-opacity=".6" stroke-width="1" stroke-linecap="round"/>
@@ -30,6 +34,7 @@
       <path d="M16.73 27L32.07 24.47" stroke="url(#bar)" stroke-width="2.4" stroke-linecap="round"/></g>
     <path d="M12.4 17.33C12.93 16.09 13.57 15.43 16.07 15C18.57 14.57 24.53 14.22 27.4 14.73C30.27 15.24 32 16.63 33.27 18.07C34.53 19.5 34.69 21.29 35 23.33C35.31 25.38 35.27 28.17 35.13 30.33C35 32.5 34.76 34.33 34.2 36.33C33.64 38.33 33.02 40.51 31.8 42.33C30.58 44.16 28.47 46.27 26.87 47.27C25.27 48.27 23.6 48.49 22.2 48.33C20.8 48.18 19.38 47.56 18.47 46.33C17.56 45.11 17.16 43.11 16.73 41C16.31 38.89 16.31 35.89 15.93 33.67C15.56 31.44 14.98 29.53 14.47 27.67C13.96 25.8 13.21 24.19 12.87 22.47C12.52 20.74 11.87 18.58 12.4 17.33Z" fill="none" stroke="url(#neon)" stroke-width="2.2"/>
       <path d="M16.73 27L32.07 24.47" stroke="url(#bar)" stroke-width="2.4" stroke-linecap="round"/>
+    </g>
   </g>
   <path d="M16 2H48A14 14 0 0 1 62 16V48A14 14 0 0 1 48 62H16A14 14 0 0 1 2 48V16A14 14 0 0 1 16 2Z" fill="none" stroke="url(#rim)" stroke-width="1"/>
 </svg>
