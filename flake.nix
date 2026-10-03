@@ -17,10 +17,21 @@
                     # The helper (MID360 + RealSense + unitree_sdk2) is Linux-only. The Jetson (aarch64) runs the shipped
                     # prebuilt, built against its old glibc (g1_helper_cpp/build_prebuilt.sh); x86_64 Linux builds it here;
                     # a Mac gets the panel only.
-                    helperEnv =
-                        if system == "aarch64-linux" then "export G1_HELPER_DIR=${./g1_helper_cpp/bin}"
-                        else if system == "x86_64-linux" then "export G1_HELPER=${g1-helper.packages.${system}.g1_helper}/bin/g1_helper"
+                    helperEnvFor = target:
+                        if target == "aarch64-linux" then "export G1_HELPER_DIR=${./g1_helper_cpp/bin}"
+                        else if target == "x86_64-linux" then "export G1_HELPER=${g1-helper.packages.${target}.g1_helper}/bin/g1_helper"
                         else "";
+                    helperEnv = helperEnvFor system;
+                    # dimosApp for <arch> Linux, from any machine: its shell and deno are the target's (cache.nixos.org
+                    # downloads); x86_64's helper is a native Linux build, so off Linux it comes from dimos-desktop.cachix.org
+                    linuxApp = frontend: arch:
+                        let linux = nixpkgs.legacyPackages."${arch}-linux"; in
+                        pkgs.writeTextFile {
+                            name = "dimos-app-server-${arch}-linux";
+                            destination = "/bin/dimos-app-server";
+                            executable = true;
+                            text = "#!${linux.runtimeShell}\n${helperEnvFor "${arch}-linux"}\nexec ${linux.deno}/bin/deno run -A --no-lock ${./backend}/main.ts --frontend ${frontend} \"$@\"\n";
+                        };
                 in rec {
                     frontend = pkgs.buildNpmPackage {
                         pname = "g1-dash-frontend";
@@ -35,6 +46,8 @@
                         exec ${pkgs.deno}/bin/deno run -A --no-lock ${./backend}/main.ts --frontend ${frontend} "$@"
                     '';
                     default = dimosApp;
+                    dimosApp-aarch64-linux = linuxApp frontend "aarch64";
+                    dimosApp-x86_64-linux = linuxApp frontend "x86_64";
                 });
         };
 }

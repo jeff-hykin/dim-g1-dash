@@ -152,3 +152,9 @@ agent:
         enabled:
           type: boolean
           required: true
+# what Desktop builds, in order; all but the last are download-only: an arm/x86 Linux machine takes the Mac's cross
+# build from the cache above when it's there, instead of building from source
+nix:
+    - { attr: packages.aarch64-darwin.dimosApp-aarch64-linux, system: aarch64-linux }
+    - { attr: packages.aarch64-darwin.dimosApp-x86_64-linux, system: x86_64-linux }
+    - dimosApp
