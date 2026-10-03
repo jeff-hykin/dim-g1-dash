@@ -1,3 +1,5 @@
+import type { AppEvent } from "./types.ts"
+
 // The app's backend API (backend/routes.ts), by relative URL: the page lives at Desktop's /apps/<name>/.
 export class ApiError extends Error {}
 
@@ -15,7 +17,7 @@ export async function call<T = unknown>(method: string, path: string, body?: unk
 }
 
 /** The backend's events (api/events/ws), reconnecting with backoff; returns an unsubscribe. */
-export function events(onEvent: (event: any) => void): () => void {
+export function events(onEvent: (event: AppEvent) => void): () => void {
     let socket: WebSocket | null = null
     let delay = 500
     let stopped = false

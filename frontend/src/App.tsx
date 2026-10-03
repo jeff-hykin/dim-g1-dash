@@ -442,6 +442,14 @@ export function App() {
             hint: "view",
             run: () => setLidarBig((big) => !big),
         })
+        const simulating = state?.link.kind === "simulator"
+        if (simulating || !state?.link.ready) {
+            actions.push({
+                label: simulating ? "Stop the simulator" : "Use the simulator (no robot)",
+                hint: "simulator",
+                run: () => call("PUT", "api/simulator", { enabled: !simulating }).catch((e) => showToast(message(e))),
+            })
+        }
         actions.push({ label: "E-STOP", hint: "danger", danger: "red", run: estop })
         return actions
     }, [
@@ -454,6 +462,9 @@ export function App() {
         setClaim,
         useRobotStream,
         estop,
+        state?.link.kind,
+        state?.link.ready,
+        showToast,
     ])
     const paletteMatches = useMemo(() => {
         const words = paletteQuery.trim().toLowerCase().split(/\s+/).filter(Boolean)

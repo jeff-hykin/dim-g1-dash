@@ -52,3 +52,12 @@ export type CommandInfo = {
     title: string
     active: boolean
 }
+
+/** What arrives on api/events/ws (backend/robot.ts, backend/routes.ts) */
+export type AppEvent =
+    | { type: "state"; state: RobotState }
+    | { type: "mode"; mode: string | null }
+    | { type: "notice"; level: "info" | "error"; message: string }
+    | { type: "settings"; settings: Settings }
+    | { type: "lidar"; points: number; nearest: number | null; cloud: number[] }
+    | { type: "seq"; sequence: { name: string; step: string; state: string } }
