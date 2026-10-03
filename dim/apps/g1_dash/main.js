@@ -12,7 +12,7 @@
 // modules are already running alongside this app.
 
 import { TextLineStream } from "https://deno.land/std@0.224.0/streams/text_line_stream.ts"
-import { DimAppBackend, dimContext } from "https://esm.sh/gh/jeff-hykin/dim-app@v0.5.0/backend.js"
+import { DimAppBackend, dimContext } from "https://esm.sh/gh/jeff-hykin/dim-app@v0.6.0/backend.js"
 
 const HELPER_DIR = new URL("./g1_helper_cpp", import.meta.url).pathname
 const RESTART_MS = 3000
