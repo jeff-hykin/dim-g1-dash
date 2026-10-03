@@ -1,6 +1,6 @@
 // Newline-JSON protocol over stdio, shared by every sensor/control thread.
 //
-// The helper is spawned by the Deno backend (main.js) with its stdio piped. We
+// The helper is spawned by the Deno backend (backend/robot.ts) with its stdio piped. We
 // emit one JSON object per line on stdout (telemetry) and read one JSON object
 // per line on stdin (commands). Several threads emit concurrently, so all writes
 // go through Protocol::emit, which holds a mutex and flushes each line atomically.

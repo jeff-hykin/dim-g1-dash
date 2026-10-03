@@ -1,21 +1,5 @@
 {
   "nodes": {
-    "dim-app": {
-      "locked": {
-        "lastModified": 1791013314,
-        "narHash": "sha256-g72hwr36l6CIb3C8fc2N7UHDwKnbJ9dbehGEkSub1W4=",
-        "owner": "jeff-hykin",
-        "repo": "dim-app",
-        "rev": "f379dce2086df5251a8751050578c5449b4e45a1",
-        "type": "github"
-      },
-      "original": {
-        "owner": "jeff-hykin",
-        "ref": "v0.6.1",
-        "repo": "dim-app",
-        "type": "github"
-      }
-    },
     "flake-utils": {
       "inputs": {
         "systems": "systems"
@@ -42,11 +26,11 @@
         "unitree-sdk2": "unitree-sdk2"
       },
       "locked": {
-        "path": "./dim/apps/g1_dash/g1_helper_cpp",
+        "path": "./g1_helper_cpp",
         "type": "path"
       },
       "original": {
-        "path": "./dim/apps/g1_dash/g1_helper_cpp",
+        "path": "./g1_helper_cpp",
         "type": "path"
       },
       "parent": []
@@ -101,7 +85,6 @@
     },
     "root": {
       "inputs": {
-        "dim-app": "dim-app",
         "g1-helper": "g1-helper",
         "nixpkgs": "nixpkgs_2"
       }

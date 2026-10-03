@@ -5,7 +5,7 @@
 // other consumers can keep using the depth/IR nodes. Frames are JPEG-encoded
 // (turbojpeg) and served as multipart/x-mixed-replace on a small built-in HTTP
 // server; the browser panel points an <img> straight at it, which is real video
-// streaming instead of frames over the app-bus websocket.
+// streaming instead of frames over a websocket.
 //
 // The capture side is resilient: if the device is missing or busy (EBUSY from
 // another process mid-stream) it retries every few seconds until it gets the

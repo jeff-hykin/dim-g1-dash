@@ -98,74 +98,70 @@ Collapse, Wave, Shake, Squat, Sit (Chair)**. The advanced ones (Zero Torque,
 Stand, both Primitive Walks, Wave + Turn, High/Low Stand) have no buttons at
 all: press `/` and they're in the palette, tagged `advanced`.
 
-| Camera + controls | Lidar point cloud |
-| --- | --- |
-| ![Driving the G1](docs/drive.png) | ![MID360 point cloud](docs/lidar.png) |
-
 ## How it works
 
-The G1's three interfaces — the **MID360** lidar, the **RealSense** camera, and
-the robot itself (**unitree_sdk2** over DDS) — all need native code, so the
-backend can't be pure Deno. `main.js` uses `nix run` to build and launch a
-standalone **C++ helper** (`g1_helper_cpp`) that owns all three and speaks
-newline-JSON over stdio. The dashboard relays that to/from the browser panel over
-the app-bus; drive and gait commands flow back down the same pipe.
-
-A **prebuilt helper ships with the app** (`g1_helper_cpp/bin/g1_helper-<os>-<arch>`),
-so the robot compiles nothing. Platforms with no prebuilt fall back to `nix run`,
-which builds the SDKs on first launch and takes several minutes. No dimos venv is
-required either way. If a dimos LCM bridge happens to be running alongside, the
-backend also forwards its streams to the panel.
+The G1's three interfaces — the **MID360** lidar, the **RealSense** camera, and the robot itself (**unitree_sdk2** over
+DDS) — all need native code, so a standalone **C++ helper** (`g1_helper_cpp`) owns all three and speaks newline-JSON
+over stdio. The backend (Deno, `backend/`) runs it and turns everything into HTTP endpoints; the panel (TypeScript +
+Vite + React, `frontend/`) calls only those endpoints and follows `api/events/ws` for live state. Desktop's agent calls
+the same endpoints (listed in `dimos.yaml` `agent:` and served as `agent.json`).
 
 ```
-browser panel  ⇄  main.js (Deno)  ⇄  g1_helper (C++)  ⇄  MID360 · RealSense · G1
-     app-bus            stdio (newline-JSON)              Livox · rs2 · unitree_sdk2
+panel / agent  ⇄  backend (Deno: HTTP + events ws)  ⇄  g1_helper (C++)  ⇄  MID360 · RealSense · G1
+                                                     stdio newline-JSON     Livox · V4L2 · unitree_sdk2
 ```
+
+The helper is Linux-only. `nix build .#dimosApp` gives the Jetson (aarch64) the **shipped prebuilt**
+(`g1_helper_cpp/bin/`, built against its old glibc by `build_prebuilt.sh`) and builds it from source on x86_64 Linux.
+On a Mac only the panel runs (it says so, and offers the simulator).
+
+## Endpoints
+
+Everything the panel can do is an endpoint (`backend/routes.ts`). Anything that moves or reconfigures the robot takes
+`dryRun: true`, which validates and answers with what would be sent, without sending it.
+
+| Endpoint | What it does |
+| --- | --- |
+| `GET api/state` | the robot now: link, devices, mode, loco FSM, battery (+ runtime estimate), attitude, hottest motor, joints, lidar summary (`role: context`) |
+| `GET api/commands` | every command, worded for the current mode, with its danger tier and why it's blocked |
+| `POST api/command {command, confirm?, dryRun?}` | run a mode/posture/gesture (`walk`, `collapse`, `wave`, …); dangerous ones need `confirm: true` |
+| `POST api/move {vx, vy, omega, durationMs?, dryRun?}` | drive; the robot stops ~0.4 s after the last move unless `durationMs` (≤ 5 s) holds it |
+| `POST api/estop {dryRun?}` | abort, zero velocity, damp |
+| `PUT api/lidar {connected, dryRun?}`, `PUT api/camera {connected, dryRun?}` | claim or release the exclusive devices |
+| `POST api/camera/takeover {dryRun?}` | stop Unitree's videohub so the camera can be claimed |
+| `PUT api/camera/stream {maxFps?, quality?}` | stream frame-rate cap / JPEG quality |
+| `GET api/camera/stream`, `GET api/camera/snapshot` | the MJPEG stream / one JPEG (`role: view`) |
+| `GET api/lidar/cloud` | the accumulated point cloud |
+| `GET api/settings`, `PUT api/settings` | drive speeds, and the robot IP for viewing its camera from a remote session |
+| `GET api/log` | recent helper log lines and errors |
+| `PUT api/simulator {enabled}` | run against a built-in simulated G1 (refused while a real helper is connected) |
 
 ## Install
 
-### dimOS Desktop
-
 ```sh
-dimos-desktop install https://github.com/jeff-hykin/dim-g1-dash --ref dimos-desktop2
+dimos-desktop install https://github.com/jeff-hykin/dim-g1-dash
 ```
 
-Desktop runs `nix build .#dimosApp`, which wraps the frontend and backend as a `dimos-app-server` and readies the helper:
-the shipped one on the Jetson (aarch64 Linux), a nix build on x86_64 Linux. On a Mac only the panel loads (the helper is
-Linux-only).
+Requirements: the G1's onboard computer (aarch64 Jetson), or an x86_64 Linux machine on the robot LAN, with the MID360,
+RealSense and G1 DDS interface reachable (env-var knobs in [`g1_helper_cpp/README.md`](g1_helper_cpp/README.md)).
 
-### Old dashboard
+## Development
 
 ```sh
-dim install https://github.com/jeff-hykin/dim-g1-dash
+cd frontend && npm install && npm run build && cd ..
+deno task dev                  # backend on :8787 serving frontend/dist (G1_SIMULATE=1 for the simulator)
+deno task test                 # backend/routes_test.ts — never touches a robot
+deno task check                # types + dimos.yaml lists every route (check-endpoints --write regenerates it)
+nix build .#dimosApp
 ```
-
-The app appears in the dashboard rail within a few seconds. On the G1's aarch64
-Jetson the shipped prebuilt helper starts immediately. Anywhere without a prebuilt,
-the first launch compiles the robot SDKs under Nix and takes several minutes —
-watch the dashboard logs for build progress; it's cached after that.
-
-### Requirements
-
-- Runs on the G1's onboard computer (aarch64 Jetson) — also builds on x86_64 Linux.
-- `nix` with flakes enabled **only** where no prebuilt is shipped for the platform.
-- The MID360, RealSense, and G1 DDS interface reachable on the network
-  (see the env-var knobs in [`dim/apps/g1_dash/g1_helper_cpp/README.md`](dim/apps/g1_dash/g1_helper_cpp/README.md)).
 
 ## Layout
 
 ```
-dim/apps/g1_dash/
-  app.yaml            title
-  frontend/
-    index.html        the panel — camera, 3D lidar (three.js), telemetry, controls
-  main.js             backend — runs the C++ helper, relays over the app-bus
-  g1_helper_cpp/      C++ helper — MID360 + RealSense + unitree_sdk2, JSON over stdio
-    bin/              shipped prebuilts, preferred over building
-    build_prebuilt.sh regenerates them in an Ubuntu 20.04 container
-    flake.nix         the fallback build (SDKs pinned as flake inputs), run via nix
-    CMakeLists.txt
-    src/              protocol, unitree_bridge, mid360, webcam, main
+backend/         Deno: routes.ts (every endpoint), robot.ts (helper link + simulator), g1.ts (modes and commands)
+frontend/        the panel — camera, 3D pose + lidar (three.js), telemetry, controls (React)
+g1_helper_cpp/   C++ helper — MID360 + RealSense + unitree_sdk2, JSON over stdio; bin/ = shipped Jetson prebuilt
+blackbox/        a separate read-only recorder service for the Jetson (rolling jsonl of FSM/IMU/joints/temps)
 ```
 
 ## Keyboard
@@ -203,13 +199,12 @@ attached to the robot. If the robot is *also* running G1 Dash, press `/` →
 "View robot's onboard camera stream" to watch its MJPEG feed.
 
 On a machine with no robot LAN at all, the panel shows setup instructions
-instead of dead widgets (and a separate message if `nix` is missing so the
-helper can't build).
+instead of dead widgets.
 
 ## Safety
 
 Driving is failsafe: the helper only keeps the robot moving while fresh `move`
-commands arrive (~0.4 s window). Losing panel focus, closing the app, or any pipe
+commands arrive (~0.4 s window; `api/move` with `durationMs` re-sends for at most 5 s). Losing panel focus, closing the app, or any pipe
 drop halts motion on its own — nothing latches.
 
 Licensed under Apache-2.0.

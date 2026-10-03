@@ -2,9 +2,8 @@
 
 The native half of **dim-g1-dash**. It runs *on the G1's Jetson* and talks to the
 robot's three hardware interfaces, then multiplexes everything over a simple
-newline-JSON protocol on stdio. The Deno backend (`../main.js`) launches the
-prebuilt binary in `bin/` (falling back to `nix run`) and relays that protocol
-to/from the browser panel over the app-bus.
+newline-JSON protocol on stdio. The Deno backend (`../backend/robot.ts`) runs it and
+turns that protocol into the app's HTTP endpoints.
 
 ```
 stdin  (commands)              stdout (telemetry, one JSON object per line)
@@ -22,18 +21,18 @@ stdin  (commands)              stdout (telemetry, one JSON object per line)
 The camera is read through the **plain Linux V4L2 API** (no librealsense): the
 helper auto-picks the first `/dev/video*` node that can stream YUYV or MJPG —
 on the G1 that's the RealSense's color node — and serves it as
-`multipart/x-mixed-replace` MJPEG on its own HTTP port. The panel points an
-`<img>` straight at it: continuous video, no frames over the app-bus. Using the
+`multipart/x-mixed-replace` MJPEG on its own HTTP port. The backend proxies it
+as `api/camera/stream`: continuous video, no frames over the events socket. Using the
 webcam API leaves the RealSense's depth/IR nodes free for other consumers, and
 if the color node is busy or unplugged the helper just retries every few
 seconds until it gets it.
 
 ## Build / run
 
-`../main.js` prefers a **prebuilt binary** shipped in `bin/`, named
-`g1_helper-<os>-<arch>` (matching Deno's `Deno.build.os`/`arch`) — so the robot
-never pays the first-launch compile. Today we ship `linux-aarch64` (the G1's
-Jetson). Any platform without a shipped binary falls back to `nix run`.
+The app ships a **prebuilt binary** in `bin/`, named `g1_helper-<os>-<arch>`
+(matching Deno's `Deno.build.os`/`arch`), so the robot never pays the compile.
+Today that's `linux-aarch64` (the G1's Jetson); on x86_64 Linux the app's
+`nix build` builds the helper from this flake.
 
 The prebuilt links its own turbojpeg, Livox and unitree_sdk2 statically, but
 CycloneDDS is distributed by unitree as `.so` only, so `libddsc.so.0` and

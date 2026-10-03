@@ -624,3 +624,7 @@ settings/home/.vuerc
 #
 result
 result-*
+
+# the shipped prebuilt helper's bundled CycloneDDS libs (the *.so rules above would swallow them)
+!g1_helper_cpp/bin/lib-*/*.so.0
+frontend/dist

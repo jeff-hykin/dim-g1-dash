@@ -1,3 +1,154 @@
-# A dimOS Desktop app. Format: https://github.com/dimensionalOS/dimos-desktop/blob/jeff/rust_desktop/docs/apps.md
 title: G1 Dash
-dimos-desktop-api: ">=2 <3"
+dimos-desktop-api: '>=2 <3'
+caches:
+  - url: 'https://dimos-desktop.cachix.org'
+    key: 'dimos-desktop.cachix.org-1:A4P35aGJGmCan92LWyamtSFXMqaVE+VRFYnrJ8QMTeQ='
+agent:
+  description: >-
+    G1 Dash: drive and monitor a Unitree G1 humanoid from its onboard Jetson — modes, postures, gestures, driving,
+    E-STOP, the RealSense camera, the MID360 lidar and telemetry
+  endpoints:
+    - method: GET
+      path: api/state
+      description: >-
+        The robot right now: link, devices (claimed/connected), mode, loco FSM, battery, attitude, hottest motor, joint
+        positions, lidar summary, drive settings
+      role: context
+    - method: GET
+      path: api/commands
+      description: >-
+        Every mode/posture/gesture command for api/command, worded for the current mode: what mode it puts the robot in,
+        whether it's dangerous (needs confirm), and why it's blocked right now (if it is)
+    - method: POST
+      path: api/command
+      description: >-
+        Run a robot command by id (see api/commands): stiffen, walk, collapse, wave, shake, squat, standup, sit,
+        zerotorque, stand, primitive-walk-slow, primitive-walk-fast, wave-turn, release-arms, high-stand, low-stand.
+        MOVES THE ROBOT. Dangerous ones (danger red/amber) need confirm: true.
+      params:
+        command:
+          type: string
+          required: true
+          description: the command id
+        confirm:
+          type: boolean
+          description: 'required for dangerous commands: the robot may fall or self-balance'
+        dryRun: &ref_0
+          type: boolean
+          description: 'validate and return what would be sent, without touching the robot'
+    - method: POST
+      path: api/move
+      description: >-
+        Drive: body velocity (vx forward m/s, vy left m/s, omega counter-clockwise rad/s). MOVES THE ROBOT. The robot
+        stops on its own ~0.4 s after the last move, so either repeat it (the panel sends 15/s) or pass durationMs (≤
+        5000) and the backend holds it that long, then stops. Needs mode walk or primitive_walk.
+      params:
+        vx:
+          type: number
+          description: 'm/s, |vx| ≤ 1.92'
+        vy:
+          type: number
+          description: 'm/s, |vy| ≤ 1.28'
+        omega:
+          type: number
+          description: 'rad/s, |omega| ≤ 4.00'
+        durationMs:
+          type: number
+          description: 'hold this velocity for this long, then stop (max 5000)'
+        dryRun: *ref_0
+    - method: POST
+      path: api/estop
+      description: 'E-STOP: abort any sequence, zero velocity and damp immediately (the robot goes limp). Always allowed.'
+      params:
+        dryRun: *ref_0
+    - method: PUT
+      path: api/lidar
+      description: >-
+        Claim (connected: true) or release the MID360 lidar. It's exclusive: while claimed, other programs (e.g. a SLAM
+        stack) can't use it.
+      params:
+        connected:
+          type: boolean
+          required: true
+        dryRun: *ref_0
+    - method: PUT
+      path: api/camera
+      description: >-
+        Claim (connected: true) or release the RealSense color camera. Exclusive: on a stock G1 Unitree's videohub holds
+        it — see api/camera/takeover.
+      params:
+        connected:
+          type: boolean
+          required: true
+        dryRun: *ref_0
+    - method: POST
+      path: api/camera/takeover
+      description: >-
+        Force the camera free: stop Unitree's master_service and its videohub_pc4 (which hold the RealSense from boot),
+        then claim it. The robot doesn't move, but its own video app loses the camera until `sudo systemctl start
+        master_service`. Needs the sudoers rules in the README.
+      params:
+        dryRun: *ref_0
+    - method: PUT
+      path: api/camera/stream
+      description: >-
+        Tune the camera stream: maxFps caps the frame rate (0 = uncapped), quality pins JPEG quality (0 = adapt to the
+        link)
+      params:
+        maxFps:
+          type: number
+          description: '0-60, 0 = uncapped'
+        quality:
+          type: number
+          description: '0-100, 0 = adaptive'
+    - method: GET
+      path: api/camera/stream
+      description: >-
+        The live camera as an MJPEG stream (multipart/x-mixed-replace; each part has an X-Timestamp in ms) — for the
+        page; agents want api/camera/snapshot
+    - method: GET
+      path: api/camera/snapshot
+      description: 'What the robot''s camera sees now, as a JPEG (needs the camera connected)'
+      role: view
+    - method: GET
+      path: api/lidar/cloud
+      description: >-
+        The MID360 point cloud accumulated over the last ~4 s, robot frame (z up, already flipped for the G1's
+        upside-down mount): flat [x,y,z,…] in meters, plus the nearest obstacle range
+    - method: GET
+      path: api/settings
+      description: >-
+        Drive settings: full-stick linear speed (m/s) and turn speed (rad/s) the panel's keys/pad use, and the robot IP
+        used to view its camera from a remote session
+    - method: PUT
+      path: api/settings
+      description: 'Change drive settings (any subset); reset: true restores the defaults'
+      params:
+        linearSpeed:
+          type: number
+          description: 'm/s, 0.1-1.2'
+        turnSpeed:
+          type: number
+          description: 'rad/s, 0.2-2.5'
+        robotIp:
+          type: string
+          description: 'the Jetson running G1 Dash, for a remote session''s camera view'
+        reset:
+          type: boolean
+          description: restore the default speeds
+    - method: GET
+      path: api/log
+      description: Recent helper log lines and errors (newest last)
+      params:
+        limit:
+          type: number
+          description: 'how many (default 50, max 200)'
+    - method: PUT
+      path: api/simulator
+      description: >-
+        Run against a built-in simulated G1 instead of the real helper (demos and testing with no robot). Refused while
+        a real helper is connected.
+      params:
+        enabled:
+          type: boolean
+          required: true
