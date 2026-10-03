@@ -1717,6 +1717,7 @@ els.lidarExpand.onclick = () => {
   const big = els.lidarCard.classList.toggle("big")
   els.lidarExpand.classList.toggle("on", big)
   els.lidarExpand.title = big ? "Shrink" : "Expand"
+  els.lidarExpand.innerHTML = `<i data-dim-icon="${big ? "shrink" : "expand"}"></i>`
   requestAnimationFrame(resizeLidar)
 }
 addEventListener("resize", () => requestAnimationFrame(() => { resizeLidar(); resizePose(); renderPose() }))
@@ -1725,6 +1726,7 @@ els.poseExpand.onclick = () => {
     const big = els.poseCard.classList.toggle("big")
     els.poseExpand.classList.toggle("on", big)
     els.poseExpand.title = big ? "Shrink" : "Expand"
+    els.poseExpand.innerHTML = `<i data-dim-icon="${big ? "shrink" : "expand"}"></i>`
     requestAnimationFrame(() => { resizePose(); renderPose() })
 }
 
