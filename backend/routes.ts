@@ -1,4 +1,4 @@
-// Every G1 Dash action, as an endpoint (http.ts). The panel calls only these, and so can Desktop's agent. Anything
+// Every G1 Ctrl action, as an endpoint (http.ts). The panel calls only these, and so can Desktop's agent. Anything
 // that moves or reconfigures the robot takes `dryRun: true`, which validates and answers with what would be sent
 // without sending it.
 import { HttpError, publishEvent, type Route } from "./http.ts"
@@ -13,7 +13,7 @@ import {
 } from "./g1.ts"
 import * as robot from "./robot.ts"
 
-export const DESCRIPTION = "G1 Dash: drive and monitor a Unitree G1 humanoid from its onboard Jetson — modes, " +
+export const DESCRIPTION = "G1 Ctrl: drive and monitor a Unitree G1 humanoid from its onboard Jetson — modes, " +
     "postures, gestures, driving, E-STOP, the RealSense camera, the MID360 lidar and telemetry"
 
 const dryRunParam = {
@@ -376,7 +376,7 @@ export const routes: Route[] = [
         params: {
             linearSpeed: { type: "number", description: `m/s, ${DRIVE_LIMITS.linearSpeed.join("-")}` },
             turnSpeed: { type: "number", description: `rad/s, ${DRIVE_LIMITS.turnSpeed.join("-")}` },
-            robotIp: { type: "string", description: "the Jetson running G1 Dash, for a remote session's camera view" },
+            robotIp: { type: "string", description: "the Jetson running G1 Ctrl, for a remote session's camera view" },
             reset: { type: "boolean", description: "restore the default speeds" },
         },
         handler: ({ linearSpeed, turnSpeed, robotIp, reset }) => {

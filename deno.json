@@ -17,7 +17,7 @@
         ],
         "exclude": [
             "frontend/src/joints.ts",
-            "frontend/src/theme.css"
+            "frontend/src/dim-app"
         ]
     },
     "lint": {

@@ -15,7 +15,7 @@ function tokenColor(name: string) {
 }
 
 function themedGrid(size: number, divisions: number) {
-    const grid = new THREE.GridHelper(size, divisions, tokenColor("--input"), tokenColor("--border"))
+    const grid = new THREE.GridHelper(size, divisions, tokenColor("--scene-grid-major"), tokenColor("--scene-grid"))
     grid.rotation.x = Math.PI / 2 // GridHelper is xz by default; lay it in xy
     return grid
 }

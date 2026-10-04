@@ -1,4 +1,4 @@
-// G1 Dash: the camera fills the stage; telemetry, the pose and lidar views, the command dock and the drive pad float
+// G1 Ctrl: the camera fills the stage; telemetry, the pose and lidar views, the command dock and the drive pad float
 // over it. Every action goes through the backend (api.ts → backend/routes.ts), which Desktop's agent can call too;
 // what the robot is doing comes from api/state and the api/events/ws events.
 //   keyboard: W/S forward·back  A/D turn  Q/E strafe  Shift boost  Space E-STOP  / action search
@@ -8,6 +8,7 @@ import { type CameraStats, streamCamera } from "./camera.ts"
 import { Icon } from "./icons.tsx"
 import { createLidarScene, createPoseScene } from "./scenes.ts"
 import type { CommandInfo, RobotState, Settings } from "./types.ts"
+import { ThemeToggle } from "./ThemeToggle.tsx"
 
 const BOOST = 1.6 // Shift
 const VY_RATIO = 0.4 / 0.6 // strafe as a fraction of forward
@@ -321,10 +322,10 @@ export function App() {
         call("POST", "api/camera/takeover").catch((error) => showToast(message(error)))
     }, [showToast])
 
-    // remote session: watch the MJPEG served by the G1 Dash running ON the robot (cross-origin, so an <img>)
+    // remote session: watch the MJPEG served by the G1 Ctrl running ON the robot (cross-origin, so an <img>)
     const useRobotStream = useCallback(() => {
         const ip = prompt(
-            "Robot IP (the Jetson running G1 Dash):",
+            "Robot IP (the Jetson running G1 Ctrl):",
             stateRef.current?.settings.robotIp ?? "192.168.123.164",
         )
         if (!ip) {
@@ -640,7 +641,7 @@ export function App() {
                         and lidar can't be reached.
                     </p>
                     <p>
-                        G1 Dash runs <b>onboard the robot</b>: install dimOS Desktop on the G1's Jetson (usually{" "}
+                        G1 Ctrl runs <b>onboard the robot</b>: install dimOS Desktop on the G1's Jetson (usually{" "}
                         <code>ssh unitree@192.168.123.164</code> from a machine plugged into the robot), then install
                         {" "}
                         <code>https://github.com/jeff-hykin/dim-g1-dash</code>{" "}
@@ -683,7 +684,7 @@ export function App() {
                         — this machine is on the robot's LAN but isn't the robot itself. Driving, telemetry and the
                         MID360 all work from here; the RealSense is attached to the robot.
                     </p>
-                    <p>If the robot is also running G1 Dash, view its camera feed:</p>
+                    <p>If the robot is also running G1 Ctrl, view its camera feed:</p>
                 </div>
             )
             placeholderButton = { label: "View robot's camera stream", variant: "good", run: useRobotStream }
@@ -732,7 +733,7 @@ export function App() {
                         if (remoteCamUrl) {
                             setCameraLive(null)
                             setCameraMessage(
-                                `Robot stream unreachable (${remoteCamUrl}) — is G1 Dash running on the robot? Press / to retry.`,
+                                `Robot stream unreachable (${remoteCamUrl}) — is G1 Ctrl running on the robot? Press / to retry.`,
                             )
                         }
                     }}
@@ -784,7 +785,7 @@ export function App() {
                         <path d="M14.1 8.5 v1.4" />
                         <path d="M4.6 21 c0.6-3.4 3.6-5.2 7.4-5.2 s6.8 1.8 7.4 5.2" />
                     </svg>
-                    <span className="name">G1</span>
+                    <span className="name">G1 Ctrl</span>
                 </div>
                 <div className={"dim-badge pill " + (helperReady ? "ok" : "danger")}>
                     <span className="dot" />
@@ -856,6 +857,7 @@ export function App() {
                     </div>
                 )}
                 <div className="spacer" />
+                <ThemeToggle />
                 <button
                     type="button"
                     className="dim-btn danger estop"

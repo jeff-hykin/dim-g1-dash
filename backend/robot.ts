@@ -264,7 +264,7 @@ async function startHelper() {
         return
     }
     if (Deno.build.os !== "linux") {
-        note = "G1 Dash's onboard helper only runs on Linux (the G1's Jetson). " +
+        note = "G1 Ctrl's onboard helper only runs on Linux (the G1's Jetson). " +
             "This machine can show the panel, but install the app on the robot to drive it."
         publishState()
         return

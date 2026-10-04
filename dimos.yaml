@@ -1,11 +1,11 @@
-title: G1 Dash
+title: G1 Ctrl
 dimos-desktop-api: '>=2 <3'
 caches:
   - url: 'https://dimos-desktop.cachix.org'
     key: 'dimos-desktop.cachix.org-1:A4P35aGJGmCan92LWyamtSFXMqaVE+VRFYnrJ8QMTeQ='
 agent:
   description: >-
-    G1 Dash: drive and monitor a Unitree G1 humanoid from its onboard Jetson — modes, postures, gestures, driving,
+    G1 Ctrl: drive and monitor a Unitree G1 humanoid from its onboard Jetson — modes, postures, gestures, driving,
     E-STOP, the RealSense camera, the MID360 lidar and telemetry
   endpoints:
     - method: GET
@@ -132,7 +132,7 @@ agent:
           description: 'rad/s, 0.2-2.5'
         robotIp:
           type: string
-          description: 'the Jetson running G1 Dash, for a remote session''s camera view'
+          description: 'the Jetson running G1 Ctrl, for a remote session''s camera view'
         reset:
           type: boolean
           description: restore the default speeds

@@ -1,10 +1,10 @@
-# dim-g1-dash
+# G1 Ctrl (dim-g1-dash)
 
 A [dimOS Desktop](https://github.com/dimensionalOS/dimos-desktop) app for driving and
 monitoring a **Unitree G1** humanoid — running *onboard the robot's Jetson*.
 
 Unlike [dim-go2-dash](https://github.com/jeff-hykin/dim-go2-dash) (which discovers
-and provisions a quadruped from a laptop), G1 Dash lives on the G1 itself and
+and provisions a quadruped from a laptop), G1 Ctrl lives on the G1 itself and
 talks straight to its hardware:
 
 - **Live camera** — the onboard RealSense color node, read via plain Linux V4L2
@@ -190,12 +190,12 @@ what `Space` (E-STOP) is for.
 
 ## Using it off-robot
 
-G1 Dash is designed to run onboard, but a laptop **plugged into the robot's
+G1 Ctrl is designed to run onboard, but a laptop **plugged into the robot's
 LAN** (an interface on `192.168.123.x`) works as a remote session: the helper
 auto-binds DDS to that interface, so driving, telemetry, engage sequences and
 even the MID360 all work. The top bar shows **Remote** instead of **Onboard**,
 and the camera pane explains the one thing that can't follow: the RealSense is
-attached to the robot. If the robot is *also* running G1 Dash, press `/` →
+attached to the robot. If the robot is *also* running G1 Ctrl, press `/` →
 "View robot's onboard camera stream" to watch its MJPEG feed.
 
 On a machine with no robot LAN at all, the panel shows setup instructions

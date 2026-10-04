@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="5.5 5.5 53 53" width="64" height="64" role="img" aria-label="G1 Dashboard">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="5.5 5.5 53 53" width="64" height="64" role="img" aria-label="G1 Ctrl">
   <!-- dimOS app icon set: Unitree G1 head in 3/4 view, traced from a photo; neon face ring and light bar on a dark glass tile -->
   <defs>
     <radialGradient id="tile" cx=".5" cy=".18" r=".95"><stop offset="0" stop-color="#0d1d3a"/><stop offset="1" stop-color="#07070f"/></radialGradient>

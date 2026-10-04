@@ -939,3 +939,29 @@ html, body {
         bottom: calc(var(--dpad-bottom) + var(--dpad-h) + 12px);
     }
 }
+
+/* Research (light): the horizon instrument on paper, and the toggle beside the E-STOP */
+body.science:not(.dark) .horizon {
+    background: linear-gradient(#e4e7fb, #f5f4ef);
+}
+body.science:not(.dark) .horizon .sky {
+    background: linear-gradient(#cfd6fa 49.6%, #e6dccb 50.4%);
+}
+body.science:not(.dark) .horizon .yaw {
+    color: var(--fg);
+    text-shadow: none;
+}
+body.science.dark .brand .name {
+    font-family: var(--display);
+    font-weight: 400;
+    font-size: 13px;
+    letter-spacing: 0.1em;
+}
+/* Portal: the slider track and progress wells need to show on the near-black cards */
+body.science.dark .dim-range,
+body.science.dark .dim-progress {
+    background: rgba(255, 255, 255, 0.1);
+}
+.topbar .dim-theme-toggle {
+    background: var(--panel);
+}
