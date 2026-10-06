@@ -3,6 +3,7 @@
 import { assert, assertEquals, assertMatch } from "@std/assert"
 import { handle } from "./http.ts"
 import { DESCRIPTION, routes } from "./routes.ts"
+import { detectPlatform } from "./platform.ts"
 import * as robot from "./robot.ts"
 
 const call = async (method: string, path: string, body?: unknown) => {
@@ -153,4 +154,18 @@ Deno.test("lidar cloud, settings, log, simulator", options, async () => {
 Deno.test("agent.json lists every route", options, async () => {
     const { json } = await call("GET", "agent.json")
     assertEquals(json.endpoints.length, routes.length)
+})
+
+Deno.test("api/platform: a Jetson only on aarch64 Linux with Tegra or a Jetson/Orin model", options, async () => {
+    const { json } = await call("GET", "api/platform")
+    assertEquals(typeof json.jetson, "boolean")
+    const none = () => null
+    assertEquals(detectPlatform({ os: "darwin", arch: "aarch64", read: none, env: "" }).jetson, false)
+    const orin = (path: string) => path.endsWith("model") ? "NVIDIA Jetson Orin NX\0" : null
+    assertEquals(detectPlatform({ os: "linux", arch: "aarch64", read: orin, env: "" }).jetson, true)
+    assertEquals(detectPlatform({ os: "linux", arch: "x86_64", read: orin, env: "" }).jetson, false)
+    const tegra = (path: string) => path === "/etc/nv_tegra_release" ? "# R35" : null
+    assertEquals(detectPlatform({ os: "linux", arch: "aarch64", read: tegra, env: "" }).jetson, true)
+    assertEquals(detectPlatform({ os: "linux", arch: "aarch64", read: none, env: "" }).jetson, false)
+    assertEquals(detectPlatform({ os: "darwin", arch: "aarch64", read: none, env: "1" }).jetson, true)
 })

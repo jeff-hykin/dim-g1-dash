@@ -4,8 +4,9 @@
 //   keyboard: W/S forward·back  A/D turn  Q/E strafe  Shift boost  Space E-STOP  / action search
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { call, events } from "./api.ts"
+import { copyText } from "./clipboard.ts"
 import { type CameraStats, streamCamera } from "./camera.ts"
-import { Icon } from "./icons.tsx"
+import { BrandMark, Icon } from "./icons.tsx"
 import { createLidarScene, createPoseScene } from "./scenes.ts"
 import type { CommandInfo, RobotState, Settings } from "./types.ts"
 import { ThemeToggle } from "./ThemeToggle.tsx"
@@ -44,31 +45,6 @@ function loadCollapsed(): Set<string> {
     } catch {
         return new Set()
     }
-}
-
-// served over plain http, navigator.clipboard is often missing (secure-context only): the textarea path is the real one
-async function copyText(text: string) {
-    try {
-        if (navigator.clipboard && isSecureContext) {
-            await navigator.clipboard.writeText(text)
-            return true
-        }
-    } catch {
-        // fall through
-    }
-    const area = document.createElement("textarea")
-    area.value = text
-    area.style.cssText = "position:fixed;top:0;left:0;opacity:0"
-    document.body.appendChild(area)
-    area.select()
-    let ok = false
-    try {
-        ok = document.execCommand("copy")
-    } catch {
-        ok = false
-    }
-    area.remove()
-    return ok
 }
 
 function Card(
@@ -130,6 +106,7 @@ export function App() {
     const pose = useRef<ReturnType<typeof createPoseScene> | null>(null)
     const lidar = useRef<ReturnType<typeof createLidarScene> | null>(null)
     const topbar = useRef<HTMLDivElement>(null)
+    const dock = useRef<HTMLDivElement>(null)
     const paletteInput = useRef<HTMLInputElement>(null)
     const cancelButton = useRef<HTMLButtonElement>(null)
     const throttled = useRef({ on: false, highSince: null as number | null })
@@ -221,15 +198,17 @@ export function App() {
         })
     }, [poseBig, lidarBig, collapsed])
 
-    // the bar wraps on a phone, by how much depends on the mode text: measure it for the dock's offset
+    // the bar wraps on a phone (by how much depends on the mode text) and the command dock wraps on a narrow desktop:
+    // measure both, for the dock's offset and the toast / palette above the dock
     useEffect(() => {
-        const sync = () =>
-            document.documentElement.style.setProperty(
-                "--topbar-h",
-                Math.ceil(topbar.current!.getBoundingClientRect().height) + "px",
-            )
+        const sync = () => {
+            const root = document.documentElement.style
+            root.setProperty("--topbar-h", Math.ceil(topbar.current!.getBoundingClientRect().height) + "px")
+            root.setProperty("--dock-h", Math.ceil(dock.current!.getBoundingClientRect().height) + "px")
+        }
         const observer = new ResizeObserver(sync)
         observer.observe(topbar.current!)
+        observer.observe(dock.current!)
         sync()
         return () => observer.disconnect()
     }, [])
@@ -769,23 +748,8 @@ export function App() {
                     <Icon name="menu" />
                 </button>
                 <div className="brand">
-                    <svg
-                        className="mark"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.6"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                    >
-                        <path d="M12 3.6 V5.1" />
-                        <circle cx="12" cy="2.9" r="0.55" fill="currentColor" stroke="none" />
-                        <rect x="6.8" y="5.1" width="10.4" height="8.2" rx="2.9" />
-                        <path d="M9.9 8.5 v1.4" />
-                        <path d="M14.1 8.5 v1.4" />
-                        <path d="M4.6 21 c0.6-3.4 3.6-5.2 7.4-5.2 s6.8 1.8 7.4 5.2" />
-                    </svg>
-                    <span className="name">G1 Ctrl</span>
+                    <BrandMark />
+                    <span className="dim-title name">G1 Ctrl</span>
                 </div>
                 <div className={"dim-badge pill " + (helperReady ? "ok" : "danger")}>
                     <span className="dot" />
@@ -1083,7 +1047,7 @@ export function App() {
             </div>
 
             <div className={"scrim" + (panelsOpen ? " open" : "")} onClick={() => setPanelsOpen(false)} />
-            <div className="dock">
+            <div className="dock" ref={dock}>
                 {commands.filter((command) => !command.advanced).map((command) => (
                     <button
                         key={command.id}
@@ -1165,7 +1129,7 @@ export function App() {
                         <div className="glyph">
                             <Icon name="warn" size={44} />
                         </div>
-                        <h2>
+                        <h2 className="dim-h1">
                             {confirm.command.confirmTitle
                                 ? `${confirm.command.label} — ${confirm.command.confirmTitle}`
                                 : confirm.command.danger === "red"

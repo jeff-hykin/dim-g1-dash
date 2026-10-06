@@ -1,11 +1,11 @@
-// vendored from jeff-hykin/dim-app v0.8.0 (theme.js); edit it there, then copy
 // dim-app theme: picks the app's palette and keeps it current.
 //
 //     import "./theme.css"   // (or <link rel="stylesheet" href=".../theme.css">)
-//     import { initTheme, mountThemeToggle, onThemeChange, themeColors } from "https://esm.sh/gh/jeff-hykin/dim-app@v0.8.0/theme.js"
+//     import { initTheme, mountThemeToggle, onThemeChange, themeColors } from "https://esm.sh/gh/jeff-hykin/dim-app@v0.13.1/theme.js"
 //     initTheme()                                   // body.science [+ .dark], html[data-dim-theme]
 //     mountThemeToggle(document.querySelector("header"))   // optional in-app Portal / Research toggle
 //     onThemeChange(({ dark }) => renderer.setClearColor(themeColors().sceneBg))
+//     .drive-bar { bottom: calc(12px + var(--dim-inset-bottom)) }   // initTheme() also keeps --dim-inset-* current
 //
 // Two palettes (theme.css): Portal (dark) and Research (light). The default follows the OS/browser
 // `prefers-color-scheme`; an app may save its own choice, per app, in localStorage "dim-app.theme:<app>"
@@ -70,7 +70,11 @@ function apply() {
         document.body.classList.add("science")
         document.body.classList.toggle("dark", dark)
     }
-    const detail = { dark, theme: dark ? "portal" : "research", choice: themeChoice() }
+    const detail = {
+        dark,
+        theme: dark ? "portal" : "research",
+        choice: themeChoice(),
+    }
     for (const listener of listeners) {
         try {
             listener(detail)
@@ -81,16 +85,44 @@ function apply() {
     dispatchEvent(new CustomEvent("dim-theme", { detail }))
 }
 
+/** The theme's faces (theme.css @font-face); loading starts in initTheme, so no view shows a fallback first. */
+export const THEME_FONTS = [
+    '400 14px "Inter"',
+    '500 14px "Inter"',
+    '600 14px "Inter"',
+    '400 14px "IBM Plex Mono"',
+    '500 14px "IBM Plex Mono"',
+    '400 14px "Instrument Serif"',
+    'italic 400 14px "Instrument Serif"',
+    '400 14px "Michroma"',
+]
+
+/** Resolves when every face of the theme has loaded (or failed). */
+export function themeFontsReady() {
+    try {
+        return Promise.allSettled(
+            THEME_FONTS.map((font) => document.fonts.load(font)),
+        ).then(() => document.fonts.ready)
+    } catch {
+        return Promise.resolve()
+    }
+}
+
 /** Applies the theme now and keeps it in sync with the OS setting and other tabs. Safe to call more than once. */
 export function initTheme() {
     if (!installed) {
         installed = true
+        initInsets()
+        themeFontsReady()
         try {
-            matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
-                if (themeChoice() === "auto") {
-                    apply()
-                }
-            })
+            matchMedia("(prefers-color-scheme: dark)").addEventListener(
+                "change",
+                () => {
+                    if (themeChoice() === "auto") {
+                        apply()
+                    }
+                },
+            )
         } catch {
             // no matchMedia: whatever the saved choice says
         }
@@ -104,7 +136,74 @@ export function initTheme() {
         }
     }
     apply()
+    signalReady()
     return themeName()
+}
+
+let readySent = false
+/** Tells Desktop (the page around an app's frame) that the app has painted in its theme, so the shell fades the frame
+ * in now instead of waiting for the frame's load event: `{type: "dimos-ready"}`, once, two frames after initTheme(). */
+function signalReady() {
+    if (readySent || globalThis.parent === globalThis.self) {
+        return
+    }
+    readySent = true
+    requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+            try {
+                parent.postMessage({ type: "dimos-ready" }, location.origin)
+            } catch {
+                // not Desktop's origin: nothing to tell
+            }
+        })
+    )
+}
+
+const INSET_SIDES = ["top", "bottom", "left", "right"]
+let insetsInstalled = false
+
+/**
+ * How much of the page Desktop's shell covers (its floating dock over the bottom edge), as `--dim-inset-top/bottom/
+ * left/right` on :root, in px; 0 when not inside Desktop. The shell posts `{type: "dimos-inset", top, bottom, left,
+ * right}` on load and on every change; this asks for it once too, in case the page started listening late.
+ * `initTheme()` calls it. Keep controls, panels and the ends of scrolling lists above `var(--dim-inset-bottom)`.
+ */
+export function initInsets() {
+    if (insetsInstalled) {
+        return
+    }
+    insetsInstalled = true
+    const root = document.documentElement
+    for (const side of INSET_SIDES) {
+        if (!root.style.getPropertyValue(`--dim-inset-${side}`)) {
+            root.style.setProperty(`--dim-inset-${side}`, "0px")
+        }
+    }
+    addEventListener("message", (event) => {
+        const data = event.data
+        if (event.origin !== location.origin || data?.type !== "dimos-inset" || event.source !== parent) {
+            return
+        }
+        for (const side of INSET_SIDES) {
+            const value = Number(data[side])
+            root.style.setProperty(`--dim-inset-${side}`, `${Number.isFinite(value) && value > 0 ? value : 0}px`)
+        }
+    })
+    try {
+        if (parent !== globalThis) {
+            parent.postMessage({ type: "dimos-inset-request" }, location.origin)
+        }
+    } catch {
+        // no parent to ask
+    }
+}
+
+/** The current insets in px, `{ top, bottom, left, right }` (all 0 outside Desktop). */
+export function insets() {
+    const style = document.documentElement.style
+    return Object.fromEntries(
+        INSET_SIDES.map((side) => [side, parseFloat(style.getPropertyValue(`--dim-inset-${side}`)) || 0]),
+    )
 }
 
 /** Saves this app's choice ("dark" | "light" | "auto") and applies it. */
@@ -124,7 +223,9 @@ export function setThemeChoice(choice) {
 /** Flips between Portal and Research; picking the OS's own scheme goes back to "auto". */
 export function toggleTheme() {
     const wantDark = !isDark()
-    setThemeChoice(wantDark === osPrefersDark() ? "auto" : wantDark ? "dark" : "light")
+    setThemeChoice(
+        wantDark === osPrefersDark() ? "auto" : wantDark ? "dark" : "light",
+    )
 }
 
 /** Calls `listener({ dark, theme, choice })` on every change. Returns an unsubscribe function. */

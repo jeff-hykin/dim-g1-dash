@@ -129,7 +129,8 @@ html, body {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 12px 14px;
+    padding: calc(12px + var(--dim-inset-top)) calc(14px + var(--dim-inset-right)) 12px
+        calc(14px + var(--dim-inset-left));
     pointer-events: none;
 }
 .topbar > * {
@@ -146,10 +147,6 @@ html, body {
     color: var(--primary);
 }
 .brand .name {
-    font-size: 15px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    color: var(--fg);
     text-shadow: 0 1px 4px var(--bg);
 }
 .spacer {
@@ -219,7 +216,6 @@ html, body {
 
 .estop {
     padding: 8px 15px;
-    font-weight: 700;
 }
 
 /* ── left column: telemetry rail above the lidar card ──
@@ -228,9 +224,9 @@ html, body {
    if the viewport is short). */
 .left-col {
     position: absolute;
-    left: 14px;
-    top: 64px;
-    bottom: 14px;
+    left: calc(14px + var(--dim-inset-left));
+    top: calc(64px + var(--dim-inset-top));
+    bottom: calc(14px + var(--dim-inset-bottom));
     z-index: 8;
     width: 260px;
     display: flex;
@@ -348,19 +344,22 @@ html, body {
     color: var(--warn);
 }
 
-/* attitude horizon (roll/pitch) — an instrument: sky/ground colors are its content */
+/* attitude horizon (roll/pitch): sky in the accent, ground in the secondary ink */
 .horizon {
     position: relative;
     height: 84px;
     border-radius: var(--radius);
     overflow: hidden;
-    background: linear-gradient(#1a2740, #0a1220);
+    background: color-mix(in srgb, var(--primary) 12%, var(--bg));
     border: 1px solid var(--border);
 }
 .horizon .sky {
     position: absolute;
     inset: -40% -40%;
-    background: linear-gradient(#2b4a7a 49.6%, #6b4a2b 50.4%);
+    background: linear-gradient(
+        color-mix(in srgb, var(--primary) 30%, var(--bg)) 49.6%,
+        color-mix(in srgb, var(--muted-fg) 30%, var(--bg)) 50.4%
+    );
     transform-origin: center;
 }
 .horizon .cross {
@@ -383,7 +382,6 @@ html, body {
     background: var(--primary);
     transform: translate(-50%, -50%);
 }
-/* always over the instrument's dark sky, in either theme */
 .horizon .yaw {
     position: absolute;
     left: 0;
@@ -392,8 +390,8 @@ html, body {
     text-align: center;
     font-family: var(--mono);
     font-size: 10px;
-    color: rgba(255, 255, 255, 0.75);
-    text-shadow: 0 1px 2px #000;
+    color: var(--fg);
+    text-shadow: 0 1px 2px var(--bg);
 }
 
 /* ── 3D cards (pose, lidar) ── */
@@ -478,26 +476,20 @@ html, body {
 /* ── command dock (bottom center) ── */
 .dock {
     position: absolute;
-    left: 50%;
-    bottom: 16px;
-    transform: translateX(-50%);
+    left: calc(288px + var(--dim-inset-left));
+    right: calc(196px + var(--dim-inset-right));
+    bottom: calc(16px + var(--dim-inset-bottom));
     z-index: 9;
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
+    justify-content: center;
     gap: 8px;
-    max-width: min(62%, 780px);
-    overflow-x: auto;
     padding: 6px;
-    scrollbar-width: thin;
-    -webkit-mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent);
-    mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent);
+    pointer-events: none;
 }
-.dock::-webkit-scrollbar {
-    height: 6px;
-}
-.dock::-webkit-scrollbar-thumb {
-    background: color-mix(in srgb, var(--fg) 22%, transparent);
-    border-radius: 3px;
+.dock > * {
+    pointer-events: auto;
 }
 /* .act = .dim-btn; the variants below are this app's safety tiers */
 .act {
@@ -529,8 +521,8 @@ html, body {
     border-color: var(--warn);
     background: color-mix(in oklch, var(--warn) 24%, var(--card));
 }
-/* the mode the robot is currently in (.dim-btn.on) */
-.act.bad.on {
+/* the mode the robot is currently in (.dim-btn.on; .dim-btn in the selector to outrank the Portal's button fill) */
+.dim-btn.act.bad.on {
     color: var(--danger-fg);
     background: var(--danger);
     border-color: var(--danger);
@@ -542,8 +534,8 @@ html, body {
    no stop button here — E-STOP (Space) covers emergencies. */
 .dpad {
     position: absolute;
-    right: 16px;
-    bottom: 16px;
+    right: calc(16px + var(--dim-inset-right));
+    bottom: calc(16px + var(--dim-inset-bottom));
     z-index: 9;
     display: grid;
     grid-template-columns: repeat(3, 46px);
@@ -586,8 +578,8 @@ html, body {
 
 .vel {
     position: absolute;
-    right: 16px;
-    bottom: 116px;
+    right: calc(16px + var(--dim-inset-right));
+    bottom: calc(116px + var(--dim-inset-bottom));
     z-index: 9;
     font-size: 10.5px;
     padding: 6px 9px;
@@ -619,9 +611,9 @@ html, body {
     display: block;
 }
 
-/* transient toast (.dim-toast): above the dock, which owns the bottom edge */
+/* transient toast (.dim-toast): above the command dock (--dock-h, measured: it wraps) */
 .toast-stack {
-    bottom: 84px;
+    bottom: calc(var(--dock-h, 56px) + 28px + var(--dim-inset-bottom));
     z-index: 20;
 }
 .toast {
@@ -685,10 +677,6 @@ html, body {
 }
 .confirm h2 {
     margin: 10px 0 8px;
-    font-size: 22px;
-    font-weight: 800;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
     color: color-mix(in oklch, var(--tier) 75%, var(--fg));
 }
 .confirm p {
@@ -703,8 +691,6 @@ html, body {
     justify-content: center;
 }
 .confirm-actions button {
-    font-weight: 700;
-    font-size: 12px;
     padding: 12px 22px;
 }
 .confirm.amber #confirm-go {
@@ -747,7 +733,7 @@ html, body {
 .palette {
     position: absolute;
     left: 50%;
-    bottom: 78px;
+    bottom: calc(var(--dock-h, 56px) + 22px + var(--dim-inset-bottom));
     transform: translateX(-50%);
     z-index: 25;
     display: none;
@@ -823,7 +809,6 @@ html, body {
     letter-spacing: 0.03em;
     color: var(--muted-fg);
     border-top: 1px solid var(--border);
-    font-family: var(--mono);
 }
 /* ── phone ──────────────────────────────────────────────────────────────────
    A phone has no hover and no keyboard, so the two things you cannot do
@@ -841,7 +826,7 @@ html, body {
     :root {
         --dpad-cell: 62px;
         --dpad-gap: 8px;
-        --dpad-bottom: calc(16px + env(safe-area-inset-bottom));
+        --dpad-bottom: calc(16px + env(safe-area-inset-bottom) + var(--dim-inset-bottom));
         --dpad-h: calc(var(--dpad-cell) * 2 + var(--dpad-gap));
     }
     .topbar {
@@ -866,12 +851,15 @@ html, body {
         right: 0;
         top: calc(var(--topbar-h, 52px) + 4px);
         bottom: auto;
-        transform: none;
-        max-width: none;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        scrollbar-width: none;
         justify-content: flex-start;
         justify-content: safe center;
         padding: 6px 10px;
         gap: 7px;
+        -webkit-mask-image: linear-gradient(to right, transparent, black 12px, black calc(100% - 12px), transparent);
+        mask-image: linear-gradient(to right, transparent, black 12px, black calc(100% - 12px), transparent);
     }
 
     /* telemetry becomes a drawer — off-canvas until the panels button */
@@ -940,28 +928,81 @@ html, body {
     }
 }
 
-/* Research (light): the horizon instrument on paper, and the toggle beside the E-STOP */
-body.science:not(.dark) .horizon {
-    background: linear-gradient(#e4e7fb, #f5f4ef);
-}
-body.science:not(.dark) .horizon .sky {
-    background: linear-gradient(#cfd6fa 49.6%, #e6dccb 50.4%);
-}
-body.science:not(.dark) .horizon .yaw {
-    color: var(--fg);
-    text-shadow: none;
-}
-body.science.dark .brand .name {
-    font-family: var(--display);
-    font-weight: 400;
-    font-size: 13px;
-    letter-spacing: 0.1em;
-}
 /* Portal: the slider track and progress wells need to show on the near-black cards */
 body.science.dark .dim-range,
 body.science.dark .dim-progress {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--line);
 }
 .topbar .dim-theme-toggle {
     background: var(--panel);
+}
+
+/* ── off the G1 (OffRobot.tsx): the setup guide, a .dim-empty card in the middle of the page ── */
+.off-robot {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    overflow-y: auto;
+}
+.off-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: calc(12px + var(--dim-inset-top)) calc(14px + var(--dim-inset-right)) 12px
+        calc(14px + var(--dim-inset-left));
+}
+.off-body {
+    flex: 1;
+    display: grid;
+    place-items: center;
+    padding: 8px 16px calc(24px + var(--dim-inset-bottom));
+}
+.off-card.dim-empty {
+    width: min(520px, 100%);
+}
+.off-steps {
+    margin: 4px 0 2px;
+    padding-left: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font: 400 13.5px/1.5 var(--sans);
+    color: var(--fg);
+}
+.off-steps li::marker {
+    color: var(--primary);
+}
+.off-steps code {
+    overflow-wrap: anywhere;
+}
+.off-cmd {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-top: 6px;
+    padding: 8px 10px;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+.off-cmd code {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--code-fg);
+    word-break: break-all;
+    -webkit-user-select: all;
+    user-select: all;
+}
+.off-cmd .dim-btn {
+    flex: 0 0 auto;
+}
+.off-error {
+    color: var(--warn);
+}
+.dim-empty-actions a.dim-btn {
+    text-decoration: none;
 }

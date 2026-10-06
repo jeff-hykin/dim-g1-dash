@@ -15,6 +15,11 @@ agent:
         positions, lidar summary, drive settings
       role: context
     - method: GET
+      path: api/platform
+      description: >-
+        Whether this machine is the G1's onboard Jetson (jetson), plus its os, arch and device-tree model. G1 Ctrl only
+        reaches the robot from the Jetson; elsewhere the panel shows a setup guide instead.
+    - method: GET
       path: api/commands
       description: >-
         Every mode/posture/gesture command for api/command, worded for the current mode: what mode it puts the robot in,

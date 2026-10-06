@@ -11,6 +11,7 @@ import {
     MOVE_LIMITS,
     resolveCommand,
 } from "./g1.ts"
+import { platform } from "./platform.ts"
 import * as robot from "./robot.ts"
 
 export const DESCRIPTION = "G1 Ctrl: drive and monitor a Unitree G1 humanoid from its onboard Jetson — modes, " +
@@ -142,6 +143,13 @@ export const routes: Route[] = [
             "hottest motor, joint positions, lidar summary, drive settings",
         role: "context",
         handler: () => robot.snapshot(),
+    },
+    {
+        method: "GET",
+        path: "api/platform",
+        description: "Whether this machine is the G1's onboard Jetson (jetson), plus its os, arch and device-tree " +
+            "model. G1 Ctrl only reaches the robot from the Jetson; elsewhere the panel shows a setup guide instead.",
+        handler: () => platform(),
     },
     {
         method: "GET",

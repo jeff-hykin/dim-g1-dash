@@ -144,6 +144,8 @@ dimos-desktop install https://github.com/jeff-hykin/dim-g1-dash
 
 Requirements: the G1's onboard computer (aarch64 Jetson), or an x86_64 Linux machine on the robot LAN, with the MID360,
 RealSense and G1 DDS interface reachable (env-var knobs in [`g1_helper_cpp/README.md`](g1_helper_cpp/README.md)).
+Anywhere else the panel shows a short setup guide (`GET api/platform` says whether this is a Jetson; `G1_ONBOARD=1` / `0`
+overrides the check) until the simulator is on or the helper reaches the robot LAN.
 
 ## Development
 

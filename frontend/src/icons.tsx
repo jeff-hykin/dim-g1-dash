@@ -21,3 +21,26 @@ export function Icon({ name, size = 18 }: { name: keyof typeof PATHS | string; s
         </svg>
     )
 }
+
+/** The G1 head-and-shoulders mark beside the app's name. */
+export function BrandMark() {
+    return (
+        <svg
+            className="mark"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+        >
+            <path d="M12 3.6 V5.1" />
+            <circle cx="12" cy="2.9" r="0.55" fill="currentColor" stroke="none" />
+            <rect x="6.8" y="5.1" width="10.4" height="8.2" rx="2.9" />
+            <path d="M9.9 8.5 v1.4" />
+            <path d="M14.1 8.5 v1.4" />
+            <path d="M4.6 21 c0.6-3.4 3.6-5.2 7.4-5.2 s6.8 1.8 7.4 5.2" />
+        </svg>
+    )
+}
