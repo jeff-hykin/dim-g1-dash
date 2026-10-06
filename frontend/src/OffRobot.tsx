@@ -4,7 +4,6 @@ import { useEffect, useState } from "react"
 import { call } from "./api.ts"
 import { copyText } from "./clipboard.ts"
 import { BrandMark } from "./icons.tsx"
-import { ThemeToggle } from "./ThemeToggle.tsx"
 import type { RobotState } from "./types.ts"
 
 const GUIDE_URL = "https://github.com/dimensionalOS/dimos/blob/main/docs/platforms/humanoid/g1/index.md"
@@ -63,7 +62,6 @@ function OffRobot({ onSimulate }: { onSimulate: () => void }) {
                     <span className="dim-title name">G1 Ctrl</span>
                 </div>
                 <div className="spacer" />
-                <ThemeToggle />
             </div>
             <div className="off-body">
                 <div className="dim-empty off-card" role="status" data-testid="off-robot">

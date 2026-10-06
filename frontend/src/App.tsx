@@ -9,7 +9,6 @@ import { type CameraStats, streamCamera } from "./camera.ts"
 import { BrandMark, Icon } from "./icons.tsx"
 import { createLidarScene, createPoseScene } from "./scenes.ts"
 import type { CommandInfo, RobotState, Settings } from "./types.ts"
-import { ThemeToggle } from "./ThemeToggle.tsx"
 
 const BOOST = 1.6 // Shift
 const VY_RATIO = 0.4 / 0.6 // strafe as a fraction of forward
@@ -821,7 +820,6 @@ export function App() {
                     </div>
                 )}
                 <div className="spacer" />
-                <ThemeToggle />
                 <button
                     type="button"
                     className="dim-btn danger estop"

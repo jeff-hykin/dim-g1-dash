@@ -933,9 +933,6 @@ body.science.dark .dim-range,
 body.science.dark .dim-progress {
     background: var(--line);
 }
-.topbar .dim-theme-toggle {
-    background: var(--panel);
-}
 
 /* ── off the G1 (OffRobot.tsx): the setup guide, a .dim-empty card in the middle of the page ── */
 .off-robot {
