@@ -1,5 +1,14 @@
 title: G1 Ctrl
 dimos-desktop-api: '>=2 <3'
+# what its server answers only its own pages (its agent: endpoints are the public API)
+private:
+    - api/events/*
+    - api/state/*
+    - api/camera/*
+    - api/lidar/*
+    - api/settings/*
+    - api/simulator/*
+    - api/scan
 caches:
   - url: 'https://dimos-desktop.cachix.org'
     key: 'dimos-desktop.cachix.org-1:A4P35aGJGmCan92LWyamtSFXMqaVE+VRFYnrJ8QMTeQ='
