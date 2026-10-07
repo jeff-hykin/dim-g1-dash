@@ -746,10 +746,13 @@ export function App() {
                 >
                     <Icon name="menu" />
                 </button>
-                <div className="brand">
-                    <BrandMark />
-                    <span className="dim-title name">G1 Ctrl</span>
-                </div>
+                {/* inside Desktop, its window bar already shows the app's icon and name */}
+                {window.parent === window && (
+                    <div className="brand">
+                        <BrandMark />
+                        <span className="dim-title name">G1 Ctrl</span>
+                    </div>
+                )}
                 <div className={"dim-badge pill " + (helperReady ? "ok" : "danger")}>
                     <span className="dot" />
                     <span>{state ? linkLabel : "Connecting…"}</span>

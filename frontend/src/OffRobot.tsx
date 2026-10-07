@@ -56,13 +56,16 @@ function OffRobot({ onSimulate }: { onSimulate: () => void }) {
         call("PUT", "api/simulator", { enabled: true }).then(onSimulate, (e) => setError(String(e?.message ?? e)))
     return (
         <div className="off-robot">
-            <div className="off-bar">
-                <div className="brand">
-                    <BrandMark />
-                    <span className="dim-title name">G1 Ctrl</span>
+            {/* inside Desktop, its window bar already shows the app's icon and name, which is all this bar holds */}
+            {window.parent === window && (
+                <div className="off-bar">
+                    <div className="brand">
+                        <BrandMark />
+                        <span className="dim-title name">G1 Ctrl</span>
+                    </div>
+                    <div className="spacer" />
                 </div>
-                <div className="spacer" />
-            </div>
+            )}
             <div className="off-body">
                 <div className="dim-empty off-card" role="status" data-testid="off-robot">
                     <div className="dim-empty-title">G1 Ctrl runs on the G1</div>
