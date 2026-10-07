@@ -1,5 +1,5 @@
-// dimos-app-server: this app's API and its built frontend on the unix socket Desktop gives (--socket), else a port.
-// Desktop's flags: --socket --desktop-url --zenoh-web-url --zenoh-connect --dimos-dir --dimos-python (docs/apps.md).
+// dimos-app-server: this app's API and its built frontend on the unix socket Desktop gives (DIMOS_APP's `socket`, the
+// one interface: docs/apps.md), else port 8787 for a standalone run. `--frontend` is the nix wrapper's, not Desktop's.
 import { eventsSocket, handle } from "./http.ts"
 import { DESCRIPTION, routes } from "./routes.ts"
 import { start } from "./robot.ts"
@@ -45,7 +45,7 @@ async function serve(request: Request): Promise<Response> {
 
 start() // the robot link: the native helper (or G1_SIMULATE=1)
 
-const socket = flag("socket")
+const socket: string | undefined = JSON.parse(Deno.env.get("DIMOS_APP") || "{}").socket
 if (socket) {
     try {
         Deno.removeSync(socket)
@@ -54,5 +54,5 @@ if (socket) {
     }
     Deno.serve({ path: socket, transport: "unix", onListen: () => console.error(`listening on ${socket}`) }, serve)
 } else {
-    Deno.serve({ port: Number(flag("port") ?? 8787) }, serve)
+    Deno.serve({ port: 8787 }, serve)
 }
