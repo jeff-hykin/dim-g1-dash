@@ -1,5 +1,5 @@
 title: G1 Ctrl
-dimos-desktop-api: '>=2 <3'
+spec-version: v1.0 # the dimos.yaml spec version this file follows
 # what its server answers only its own pages (its agent: endpoints are the public API)
 private:
     - api/events/*
