@@ -1,18 +1,18 @@
 title: G1 Ctrl
 spec-version: v1.0 # the dimos.yaml spec version this file follows
-# what its server answers only its own pages (its agent: endpoints are the public API)
-private:
-    - api/events/*
-    - api/state/*
-    - api/camera/*
-    - api/lidar/*
-    - api/settings/*
-    - api/simulator/*
-    - api/scan
 caches:
   - url: 'https://dimos-desktop.cachix.org'
     key: 'dimos-desktop.cachix.org-1:A4P35aGJGmCan92LWyamtSFXMqaVE+VRFYnrJ8QMTeQ='
-agent:
+provides:
+  # what its server answers only its own pages (its endpoints: below are the public API)
+  private:
+      - api/events/*
+      - api/state/*
+      - api/camera/*
+      - api/lidar/*
+      - api/settings/*
+      - api/simulator/*
+      - api/scan
   description: >-
     G1 Ctrl: drive and monitor a Unitree G1 humanoid from its onboard Jetson — modes, postures, gestures, driving,
     E-STOP, the RealSense camera, the MID360 lidar and telemetry
