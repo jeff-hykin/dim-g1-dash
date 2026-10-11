@@ -7,6 +7,7 @@ import {
     AttitudeIndicator,
     Badge,
     Button,
+    type ButtonVariant,
     CommandPalette,
     copyText,
     EmptyState,
@@ -49,7 +50,7 @@ const DPAD: { dir: Drive; icon: string; help: string }[] = [
     { dir: "back", icon: "arrow-down", help: "back (S)" },
     { dir: "tr", icon: "rotate-right", help: "turn right (D)" },
 ]
-const TONE_VARIANT: Record<string, string> = { good: "ok", bad: "danger", warn: "warn" }
+const TONE_VARIANT: Record<string, ButtonVariant> = { good: "ok", bad: "danger", warn: "warn" }
 type Drive = "fwd" | "back" | "sl" | "sr" | "tl" | "tr"
 type Velocity = { vx: number; vy: number; omega: number }
 type Tone = "ok" | "warn" | "danger" | "info" | "default"
@@ -512,7 +513,7 @@ export function App() {
 
     // the center placeholder: the off-robot / no-helper explainers out-rank every transient stream message
     let placeholder: { title?: string; message: React.ReactNode } | null = null
-    let placeholderButton: { label: string; run: () => void; variant: string; title?: string } | null = null
+    let placeholderButton: { label: string; run: () => void; variant: ButtonVariant; title?: string } | null = null
     if (!live) {
         if (state?.link.onboard === false) {
             placeholder = {
