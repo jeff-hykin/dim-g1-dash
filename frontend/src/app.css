@@ -184,3 +184,24 @@ html, body {
         display: none;
     }
 }
+
+/* ── off the robot: the install guide, centered ── */
+.off-robot-body {
+    display: flex;
+    justify-content: center;
+    padding: 48px 16px calc(48px + var(--dim-inset-bottom, 0px));
+    overflow-y: auto;
+}
+.off-robot-body > * {
+    width: min(680px, 100%);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.off-robot-body .dr-stepper__desc {
+    min-width: 0;
+    max-width: 100%;
+}
+.off-robot-body .dr-code {
+    overflow-x: auto;
+}

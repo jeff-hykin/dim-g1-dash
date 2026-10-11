@@ -2,7 +2,7 @@
 // instead of the dashboard, unless the simulator is on or the helper is up on the robot's LAN (a remote session).
 import { useEffect, useState } from "react"
 import { call } from "./api.ts"
-import { Alert, AppShell, Button, CodeBlock, EmptyState, Stepper, TopBar } from "dimos-react"
+import { Alert, AppShell, Button, Card, CodeBlock, Row, Stepper, TopBar } from "dimos-react"
 import type { RobotState } from "./types.ts"
 
 const GUIDE_URL = "https://github.com/dimensionalOS/dimos/blob/main/docs/platforms/humanoid/g1/index.md"
@@ -49,15 +49,32 @@ function OffRobot({ onSimulate }: { onSimulate: () => void }) {
             topBar={window.parent === window ? <TopBar title="G1 Ctrl" icon="robot" /> : undefined}
             className="off-robot"
         >
-            <EmptyState
-                layer
-                icon="robot"
-                role="status"
-                data-testid="off-robot"
-                title="G1 Ctrl runs on the G1"
-                message="It drives the robot from the G1's onboard computer, so install it there:"
-                actions={
-                    <>
+            <div className="off-robot-body">
+                <Card
+                    role="status"
+                    data-testid="off-robot"
+                    title="G1 Ctrl runs on the G1"
+                    description="It drives the robot from the G1's onboard computer, so install it there:"
+                >
+                    <Stepper
+                        vertical
+                        current={-1}
+                        steps={[
+                            { label: "Join the G1's network (Ethernet or Wi-Fi)." },
+                            {
+                                label: "SSH in",
+                                description: <CodeBlock language="sh" code="ssh unitree@192.168.123.164" />,
+                            },
+                            {
+                                label: "Install dimOS Desktop there",
+                                description: <CodeBlock language="sh" code={INSTALL_DESKTOP} />,
+                            },
+                            { label: "Open the link it prints, then install G1 Ctrl." },
+                        ]}
+                    />
+                    {error && <Alert tone="danger">{error}</Alert>}
+                    <Row gap={8} justify="flex-end">
+                        <Button variant="ghost" onClick={simulate}>Try the simulator</Button>
                         <Button
                             variant="primary"
                             icon="external"
@@ -65,28 +82,9 @@ function OffRobot({ onSimulate }: { onSimulate: () => void }) {
                         >
                             Read the full guide
                         </Button>
-                        <Button variant="ghost" onClick={simulate}>Try the simulator</Button>
-                    </>
-                }
-            >
-                <Stepper
-                    vertical
-                    current={-1}
-                    steps={[
-                        { label: "Join the G1's network (Ethernet or Wi-Fi)." },
-                        {
-                            label: "SSH in",
-                            description: <CodeBlock language="sh" code="ssh unitree@192.168.123.164" />,
-                        },
-                        {
-                            label: "Install dimOS Desktop there",
-                            description: <CodeBlock language="sh" code={INSTALL_DESKTOP} />,
-                        },
-                        { label: "Open the link it prints, then install G1 Ctrl." },
-                    ]}
-                />
-                {error && <Alert tone="danger">{error}</Alert>}
-            </EmptyState>
+                    </Row>
+                </Card>
+            </div>
         </AppShell>
     )
 }
