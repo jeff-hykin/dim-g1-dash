@@ -2,8 +2,7 @@
 // instead of the dashboard, unless the simulator is on or the helper is up on the robot's LAN (a remote session).
 import { useEffect, useState } from "react"
 import { call } from "./api.ts"
-import { copyText } from "./clipboard.ts"
-import { BrandMark } from "./icons.tsx"
+import { Alert, AppShell, Button, CodeBlock, EmptyState, Stepper, TopBar } from "dimos-react"
 import type { RobotState } from "./types.ts"
 
 const GUIDE_URL = "https://github.com/dimensionalOS/dimos/blob/main/docs/platforms/humanoid/g1/index.md"
@@ -42,63 +41,52 @@ export function Gate({ children }: { children: React.ReactNode }) {
 }
 
 function OffRobot({ onSimulate }: { onSimulate: () => void }) {
-    const [copied, setCopied] = useState(false)
     const [error, setError] = useState<string | null>(null)
-    const copy = async () => {
-        if (await copyText(INSTALL_DESKTOP)) {
-            setCopied(true)
-            setTimeout(() => setCopied(false), 1200)
-        } else {
-            setError("Couldn't copy: select the command instead.")
-        }
-    }
     const simulate = () =>
         call("PUT", "api/simulator", { enabled: true }).then(onSimulate, (e) => setError(String(e?.message ?? e)))
     return (
-        <div className="off-robot">
-            {/* inside Desktop, its window bar already shows the app's icon and name, which is all this bar holds */}
-            {window.parent === window && (
-                <div className="off-bar">
-                    <div className="brand">
-                        <BrandMark />
-                        <span className="dim-title name">G1 Ctrl</span>
-                    </div>
-                    <div className="spacer" />
-                </div>
-            )}
-            <div className="off-body">
-                <div className="dim-empty off-card" role="status" data-testid="off-robot">
-                    <div className="dim-empty-title">G1 Ctrl runs on the G1</div>
-                    <div className="dim-empty-body">
-                        It drives the robot from the G1's onboard computer, so install it there:
-                    </div>
-                    <ol className="off-steps">
-                        <li>Join the G1's network (Ethernet or Wi-Fi).</li>
-                        <li>
-                            SSH in: <code>ssh unitree@192.168.123.164</code>
-                        </li>
-                        <li>
-                            Install dimOS Desktop there:
-                            <div className="off-cmd">
-                                <code>{INSTALL_DESKTOP}</code>
-                                <button type="button" className="dim-btn sm ghost" onClick={copy}>
-                                    {copied ? "Copied" : "Copy"}
-                                </button>
-                            </div>
-                        </li>
-                        <li>Open the link it prints, then install G1 Ctrl.</li>
-                    </ol>
-                    {error && <div className="dim-empty-body off-error">{error}</div>}
-                    <div className="dim-empty-actions">
-                        <a className="dim-btn primary" href={GUIDE_URL} target="_blank" rel="noreferrer">
+        <AppShell
+            topBar={window.parent === window ? <TopBar title="G1 Ctrl" icon="robot" /> : undefined}
+            className="off-robot"
+        >
+            <EmptyState
+                layer
+                icon="robot"
+                role="status"
+                data-testid="off-robot"
+                title="G1 Ctrl runs on the G1"
+                message="It drives the robot from the G1's onboard computer, so install it there:"
+                actions={
+                    <>
+                        <Button
+                            variant="primary"
+                            icon="external"
+                            onClick={() => open(GUIDE_URL, "_blank", "noreferrer")}
+                        >
                             Read the full guide
-                        </a>
-                        <button type="button" className="dim-btn ghost" onClick={simulate}>
-                            Try the simulator
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
+                        </Button>
+                        <Button variant="ghost" onClick={simulate}>Try the simulator</Button>
+                    </>
+                }
+            >
+                <Stepper
+                    vertical
+                    current={-1}
+                    steps={[
+                        { label: "Join the G1's network (Ethernet or Wi-Fi)." },
+                        {
+                            label: "SSH in",
+                            description: <CodeBlock language="sh" code="ssh unitree@192.168.123.164" />,
+                        },
+                        {
+                            label: "Install dimOS Desktop there",
+                            description: <CodeBlock language="sh" code={INSTALL_DESKTOP} />,
+                        },
+                        { label: "Open the link it prints, then install G1 Ctrl." },
+                    ]}
+                />
+                {error && <Alert tone="danger">{error}</Alert>}
+            </EmptyState>
+        </AppShell>
     )
 }

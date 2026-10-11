@@ -1,13 +1,31 @@
 // G1 Ctrl: the camera fills the stage; telemetry, the pose and lidar views, the command dock and the drive pad float
 // over it. Every action goes through the backend (api.ts → backend/routes.ts), which Desktop's agent can call too;
-// what the robot is doing comes from api/state and the api/events/ws events.
+// what the robot is doing comes from api/state and the api/events/ws events. The UI is built from dimos-react.
 //   keyboard: W/S forward·back  A/D turn  Q/E strafe  Shift boost  Space E-STOP  / action search
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import {
+    AttitudeIndicator,
+    Badge,
+    Button,
+    CommandPalette,
+    copyText,
+    EmptyState,
+    Field,
+    IconButton,
+    KeyValue,
+    Modal,
+    Panel,
+    Slider,
+    Spacer,
+    StatusDot,
+    Text,
+    Toolbar,
+    useToast,
+} from "dimos-react"
+import { PointCloud, RobotModel, Scene3D } from "dimos-react/three"
 import { call, events } from "./api.ts"
-import { copyText } from "./clipboard.ts"
 import { type CameraStats, streamCamera } from "./camera.ts"
-import { BrandMark, Icon } from "./icons.tsx"
-import { createLidarScene, createPoseScene } from "./scenes.ts"
+import { Skeleton } from "./skeleton.ts"
 import type { CommandInfo, RobotState, Settings } from "./types.ts"
 
 const BOOST = 1.6 // Shift
@@ -31,53 +49,23 @@ const DPAD: { dir: Drive; icon: string; help: string }[] = [
     { dir: "back", icon: "arrow-down", help: "back (S)" },
     { dir: "tr", icon: "rotate-right", help: "turn right (D)" },
 ]
+const TONE_VARIANT: Record<string, string> = { good: "ok", bad: "danger", warn: "warn" }
 type Drive = "fwd" | "back" | "sl" | "sr" | "tl" | "tr"
 type Velocity = { vx: number; vy: number; omega: number }
-type PaletteAction = { label: string; hint: string; danger?: string; blocked?: boolean; run: () => void }
+type Tone = "ok" | "warn" | "danger" | "info" | "default"
 
 const deg = (rad: number) => rad * 180 / Math.PI
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error))
-
-function loadCollapsed(): Set<string> {
-    try {
-        return new Set(JSON.parse(localStorage.getItem("g1CollapsedCards") || "[]"))
-    } catch {
-        return new Set()
-    }
-}
-
-function Card(
-    { title, collapsed, onToggle, children }: {
-        title: string
-        collapsed: boolean
-        onToggle: () => void
-        children: React.ReactNode
-    },
-) {
-    return (
-        <div className={"dim-panel glass card" + (collapsed ? " collapsed" : "")}>
-            <h3 className="dim-label" title="click to collapse / expand" onClick={onToggle}>
-                <span className="chev">
-                    <Icon name="chevron-down" size={10} />
-                </span>
-                {title}
-            </h3>
-            {children}
-        </div>
-    )
-}
+const deviceTone = (up: boolean | null | undefined) => (up === true ? "ok" : up === false ? "danger" : "off")
 
 export function App() {
+    const toast = useToast()
     const [state, setState] = useState<RobotState | null>(null)
     const [commands, setCommands] = useState<CommandInfo[]>([])
     const [lastReach, setLastReach] = useState(0) // last time the backend answered
     const [now, setNow] = useState(Date.now())
-    const [toast, setToast] = useState<string | null>(null)
     const [confirm, setConfirm] = useState<{ command: CommandInfo; run: () => void } | null>(null)
     const [paletteOpen, setPaletteOpen] = useState(false)
-    const [paletteQuery, setPaletteQuery] = useState("")
-    const [paletteIndex, setPaletteIndex] = useState(0)
-    const [collapsed, setCollapsed] = useState(loadCollapsed)
     const [lidarBig, setLidarBig] = useState(false)
     const [poseBig, setPoseBig] = useState(false)
     const [panelsOpen, setPanelsOpen] = useState(false)
@@ -89,10 +77,9 @@ export function App() {
     const [cameraMessage, setCameraMessage] = useState<string | null>(null)
     const [remoteCamUrl, setRemoteCamUrl] = useState<string | null>(null)
     const [sequenceText, setSequenceText] = useState<{ text: string; failed: boolean; at: number } | null>(null)
-    const [copied, setCopied] = useState(false)
     const [lidarInfo, setLidarInfo] = useState<{ points: number; nearest: number | null } | null>(null)
+    const [cloud, setCloud] = useState<Float32Array | null>(null)
 
-    const toastTimer = useRef<number>(0)
     const keys = useRef({ fwd: false, back: false, sl: false, sr: false, tl: false, tr: false, boost: false })
     const sendTimer = useRef<number | null>(null)
     const driveHintAt = useRef(0)
@@ -100,23 +87,11 @@ export function App() {
     const stateRef = useRef<RobotState | null>(null)
     const speedsRef = useRef<Settings | null>(null)
     const camCanvas = useRef<HTMLCanvasElement>(null)
-    const poseCanvas = useRef<HTMLCanvasElement>(null)
-    const lidarCanvas = useRef<HTMLCanvasElement>(null)
-    const pose = useRef<ReturnType<typeof createPoseScene> | null>(null)
-    const lidar = useRef<ReturnType<typeof createLidarScene> | null>(null)
-    const topbar = useRef<HTMLDivElement>(null)
-    const dock = useRef<HTMLDivElement>(null)
-    const paletteInput = useRef<HTMLInputElement>(null)
-    const cancelButton = useRef<HTMLButtonElement>(null)
     const throttled = useRef({ on: false, highSince: null as number | null })
     stateRef.current = state
     speedsRef.current = speeds
 
-    const showToast = useCallback((text: string) => {
-        setToast(text)
-        clearTimeout(toastTimer.current)
-        toastTimer.current = setTimeout(() => setToast(null), 2600)
-    }, [])
+    const showToast = useCallback((text: string) => toast(text), [toast])
 
     const applyState = useCallback((next: RobotState) => {
         setState(next)
@@ -147,7 +122,7 @@ export function App() {
             } else if (event.type === "settings") {
                 setSpeeds(event.settings)
             } else if (event.type === "lidar") {
-                lidar.current?.update(event.cloud ?? [])
+                setCloud(Float32Array.from(event.cloud ?? []))
                 setLidarInfo({ points: event.points, nearest: event.nearest })
             } else if (event.type === "seq") {
                 const { name, step, state: phase } = event.sequence
@@ -174,43 +149,6 @@ export function App() {
     // the link (re)connecting changes what can run
     const ready = state?.link.ready ?? false
     useEffect(refreshCommands, [ready, refreshCommands])
-
-    // ── 3D views ──
-    useEffect(() => {
-        pose.current = createPoseScene(poseCanvas.current!)
-        lidar.current = createLidarScene(lidarCanvas.current!)
-        return () => {
-            pose.current?.dispose()
-            lidar.current?.dispose()
-        }
-    }, [])
-    useEffect(() => {
-        pose.current?.update(
-            state?.jointPositions ?? null,
-            state?.attitude ? [state.attitude.roll, state.attitude.pitch, state.attitude.yaw] : null,
-        )
-    }, [state?.jointPositions, state?.attitude])
-    useEffect(() => {
-        requestAnimationFrame(() => {
-            pose.current?.resize()
-            lidar.current?.resize()
-        })
-    }, [poseBig, lidarBig, collapsed])
-
-    // the bar wraps on a phone (by how much depends on the mode text) and the command dock wraps on a narrow desktop:
-    // measure both, for the dock's offset and the toast / palette above the dock
-    useEffect(() => {
-        const sync = () => {
-            const root = document.documentElement.style
-            root.setProperty("--topbar-h", Math.ceil(topbar.current!.getBoundingClientRect().height) + "px")
-            root.setProperty("--dock-h", Math.ceil(dock.current!.getBoundingClientRect().height) + "px")
-        }
-        const observer = new ResizeObserver(sync)
-        observer.observe(topbar.current!)
-        observer.observe(dock.current!)
-        sync()
-        return () => observer.disconnect()
-    }, [])
 
     // ── camera ──
     const cameraClaimed = state?.devices.cameraClaimed ?? false
@@ -377,18 +315,24 @@ export function App() {
         call("PUT", "api/settings", { [key]: value }).catch((error) => showToast(message(error)))
     }, [computeVelocity, showToast])
 
-    // ── palette ──
+    // ── palette (/) ──
     const openPalette = useCallback(() => {
-        setPaletteOpen(true)
-        setPaletteQuery("")
-        setPaletteIndex(0)
         releaseAll() // typing must not drive
-        requestAnimationFrame(() => paletteInput.current?.focus())
+        setPaletteOpen(true)
     }, [releaseAll])
-    const paletteActions = useMemo((): PaletteAction[] => {
-        const actions: PaletteAction[] = commands.map((command) => ({
+    const paletteCommands = useMemo(() => {
+        const actions: {
+            id: string
+            label: string
+            group: string
+            shortcut?: string
+            icon?: string
+            run: () => void
+        }[] = commands.map((command) => ({
+            id: `cmd-${command.id}`,
             label: command.mode ? `${command.label} → mode: ${command.mode}` : command.label,
-            hint: command.blocked ??
+            group: "Robot",
+            shortcut: command.blocked ??
                 (command.danger === "red"
                     ? "danger"
                     : command.advanced
@@ -397,39 +341,50 @@ export function App() {
                     ? "sequence"
                     : command.danger === "amber"
                     ? "balance"
-                    : ""),
-            danger: command.danger,
-            blocked: !!command.blocked,
+                    : undefined),
+            icon: command.danger ? "warn" : undefined,
             run: () => runCommand(command),
         }))
         actions.push({
+            id: "camera",
             label: cameraClaimed ? "Release camera (free it for other apps)" : "Connect camera",
-            hint: "device",
+            group: "Devices",
+            icon: "camera",
             run: () => setClaim("camera", !cameraClaimed),
         })
         const lidarClaimed = state?.devices.lidarClaimed ?? false
         actions.push({
+            id: "lidar",
             label: lidarClaimed ? "Release MID360 (free it for other apps)" : "Connect MID360",
-            hint: "device",
+            group: "Devices",
+            icon: "signal",
             run: () => setClaim("lidar", !lidarClaimed),
         })
         if (state?.link.remote) {
-            actions.push({ label: "View robot's onboard camera stream", hint: "remote", run: useRobotStream })
+            actions.push({
+                id: "robot-stream",
+                label: "View robot's onboard camera stream",
+                group: "Devices",
+                run: useRobotStream,
+            })
         }
         actions.push({
+            id: "lidar-view",
             label: lidarBig ? "Shrink lidar view" : "Expand lidar view",
-            hint: "view",
+            group: "View",
+            icon: lidarBig ? "shrink" : "expand",
             run: () => setLidarBig((big) => !big),
         })
         const simulating = state?.link.kind === "simulator"
         if (simulating || !state?.link.ready) {
             actions.push({
+                id: "simulator",
                 label: simulating ? "Stop the simulator" : "Use the simulator (no robot)",
-                hint: "simulator",
+                group: "Simulator",
                 run: () => call("PUT", "api/simulator", { enabled: !simulating }).catch((e) => showToast(message(e))),
             })
         }
-        actions.push({ label: "E-STOP", hint: "danger", danger: "red", run: estop })
+        actions.push({ id: "estop", label: "E-STOP", group: "Robot", shortcut: "Space", icon: "stop", run: estop })
         return actions
     }, [
         commands,
@@ -445,37 +400,12 @@ export function App() {
         state?.link.ready,
         showToast,
     ])
-    const paletteMatches = useMemo(() => {
-        const words = paletteQuery.trim().toLowerCase().split(/\s+/).filter(Boolean)
-        return paletteActions.filter((action) => words.every((word) => action.label.toLowerCase().includes(word)))
-    }, [paletteActions, paletteQuery])
-    const selected = Math.max(0, Math.min(paletteIndex, paletteMatches.length - 1))
-    const firePalette = (i: number) => {
-        const action = paletteMatches[i]
-        if (action) {
-            setPaletteOpen(false)
-            action.run()
-        }
-    }
 
     // ── keyboard ──
     useEffect(() => {
-        // Escape in the CAPTURE phase: Desktop's shell also listens for it and can win the bubble-phase race
-        const escape = (e: KeyboardEvent) => {
-            if (e.code !== "Escape" || (!paletteOpen && !confirm)) {
-                return
-            }
-            e.preventDefault()
-            e.stopImmediatePropagation()
-            if (paletteOpen) {
-                setPaletteOpen(false)
-            } else {
-                setConfirm(null)
-            }
-        }
         const down = (e: KeyboardEvent) => {
             if (paletteOpen) {
-                return
+                return // typed W/A/Space in the search box must not drive or E-STOP the robot
             }
             if (e.code === "Space") {
                 e.preventDefault()
@@ -512,38 +442,15 @@ export function App() {
             }
         }
         // focus lost mid-drive: release everything (safety)
-        addEventListener("keydown", escape, true)
         addEventListener("keydown", down)
         addEventListener("keyup", up)
         addEventListener("blur", releaseAll)
         return () => {
-            removeEventListener("keydown", escape, true)
             removeEventListener("keydown", down)
             removeEventListener("keyup", up)
             removeEventListener("blur", releaseAll)
         }
     }, [paletteOpen, confirm, estop, openPalette, updateDrive, releaseAll])
-
-    useEffect(() => {
-        if (confirm) {
-            cancelButton.current?.focus() // a stray Enter backs out; Tab reaches confirm
-        }
-    }, [confirm])
-
-    const toggleCard = (title: string) => {
-        setCollapsed((current) => {
-            const next = new Set(current)
-            if (!next.delete(title)) {
-                next.add(title)
-            }
-            try {
-                localStorage.setItem("g1CollapsedCards", JSON.stringify([...next]))
-            } catch {
-                // private mode
-            }
-            return next
-        })
-    }
 
     // ── derived display ──
     const linkDead = lastReach !== 0 && now - lastReach > LINK_DEAD_MS
@@ -560,7 +467,7 @@ export function App() {
     const showSequence = sequenceText && (loco?.sequenceRunning || Date.now() - sequenceText.at < 1500)
     const locoStale = loco && loco.ageMs > LOCO_STALE_MS
     let modeText = lastLocoText
-    let modeClass = "dim-badge dim-mono mode"
+    let modeTone: Tone = "default"
     let modeTitle = mode
         ? state?.modeBlurb ?? ""
         : loco
@@ -568,23 +475,21 @@ export function App() {
         : "click to copy the full state"
     if (linkDead) {
         modeText = `no link ${Math.round((now - lastReach) / 1000)}s · ${lastLocoText}`
-        modeClass += " stale"
+        modeTone = "warn"
         modeTitle =
             "The dashboard is not reaching the robot at all — this is the last value received, not the current state"
     } else if (locoStale) {
         modeText = `stale ${Math.round(loco!.ageMs / 1000)}s · ${lastLocoText}`
-        modeClass += " stale"
+        modeTone = "warn"
         modeTitle =
             "The robot has stopped reporting its mode — the dashboard is still connected, so this is the helper or the loco service"
     } else if (showSequence) {
         modeText = sequenceText!.text
-        modeClass += sequenceText!.failed ? " damp" : ""
-    } else {
-        modeClass += (mode && DRIVING_MODES.includes(mode) ? " walking" : "") +
-            (mode === "collapse" || mode === "limp" ? " damp" : "")
-    }
-    if (copied) {
-        modeClass += " copied"
+        modeTone = sequenceText!.failed ? "danger" : "info"
+    } else if (mode && DRIVING_MODES.includes(mode)) {
+        modeTone = "ok"
+    } else if (mode === "collapse" || mode === "limp") {
+        modeTone = "danger"
     }
 
     const helperReady = state?.link.ready ?? false
@@ -592,9 +497,8 @@ export function App() {
     const drivable = !mode || DRIVING_MODES.includes(mode)
     const battery = state?.battery
     const hot = state?.hottestMotor
-    const tempLevel = hot ? (hot.celsius >= TEMP_HOT ? "danger" : hot.celsius >= TEMP_WARM ? "warn" : "ok") : "ok"
+    const tempTone: Tone = hot ? (hot.celsius >= TEMP_HOT ? "danger" : hot.celsius >= TEMP_WARM ? "warn" : "ok") : "ok"
     const attitude = state?.attitude
-    const pitchPx = attitude ? Math.max(-40, Math.min(40, deg(attitude.pitch) * 1.4)) : 0
     const lidarClaimed = devices?.lidarClaimed ?? false
     const live = cameraLive !== null
     const tuned = speeds &&
@@ -607,71 +511,78 @@ export function App() {
         : `${state.jointPositions.length} joints`
 
     // the center placeholder: the off-robot / no-helper explainers out-rank every transient stream message
-    let placeholder: React.ReactNode = null
+    let placeholder: { title?: string; message: React.ReactNode } | null = null
     let placeholderButton: { label: string; run: () => void; variant: string; title?: string } | null = null
     if (!live) {
         if (state?.link.onboard === false) {
-            placeholder = (
-                <div className="note-block">
-                    <p>
-                        <b>This machine doesn't look like the G1.</b>{" "}
-                        There's no network interface on the robot LAN (<code>192.168.123.x</code>), so the robot, camera
-                        and lidar can't be reached.
-                    </p>
-                    <p>
-                        G1 Ctrl runs <b>onboard the robot</b>: install dimOS Desktop on the G1's Jetson (usually{" "}
-                        <code>ssh unitree@192.168.123.164</code> from a machine plugged into the robot), then install
-                        {" "}
-                        <code>https://github.com/jeff-hykin/dim-g1-dash</code>{" "}
-                        there and open the panel served from the robot.
-                    </p>
-                    <p>
-                        If your robot uses a different LAN plan, set <code>G1_LIDAR_IP</code> (and{" "}
-                        <code>G1_NET_IFACE</code> for DDS) in Desktop's environment.
-                    </p>
-                </div>
-            )
+            placeholder = {
+                title: "This machine doesn't look like the G1",
+                message: (
+                    <>
+                        <p>
+                            There's no network interface on the robot LAN (<code>192.168.123.x</code>), so the robot,
+                            camera and lidar can't be reached.
+                        </p>
+                        <p>
+                            G1 Ctrl runs <b>onboard the robot</b>: install dimOS Desktop on the G1's Jetson (usually
+                            {" "}
+                            <code>ssh unitree@192.168.123.164</code>{" "}
+                            from a machine plugged into the robot), then install{" "}
+                            <code>https://github.com/jeff-hykin/dim-g1-dash</code>{" "}
+                            there and open the panel served from the robot.
+                        </p>
+                        <p>
+                            If your robot uses a different LAN plan, set <code>G1_LIDAR_IP</code> (and{" "}
+                            <code>G1_NET_IFACE</code> for DDS) in Desktop's environment.
+                        </p>
+                    </>
+                ),
+            }
         } else if (state?.link.note && !helperReady) {
-            placeholder = (
-                <div className="note-block">
-                    <p>
-                        <b>The onboard helper can't start.</b>
-                    </p>
-                    <p>{state.link.note}</p>
-                    <p>
-                        No robot? Press <code>/</code> or call <code>PUT api/simulator</code>{" "}
-                        to try the panel against a simulated G1.
-                    </p>
-                </div>
-            )
+            placeholder = {
+                title: "The onboard helper can't start",
+                message: (
+                    <>
+                        <p>{state.link.note}</p>
+                        <p>
+                            No robot? Press <code>/</code> or call <code>PUT api/simulator</code>{" "}
+                            to try the panel against a simulated G1.
+                        </p>
+                    </>
+                ),
+            }
             placeholderButton = {
                 label: "Use the simulator",
-                variant: "good",
+                variant: "ok",
                 run: () => call("PUT", "api/simulator", { enabled: true }).catch((e) => showToast(message(e))),
             }
         } else if (cameraMessage) {
-            placeholder = cameraMessage
+            placeholder = { message: cameraMessage }
             if (remoteCamUrl) {
-                placeholderButton = { label: "Retry robot stream", variant: "good", run: useRobotStream }
+                placeholderButton = { label: "Retry robot stream", variant: "ok", run: useRobotStream }
             }
         } else if (state?.link.remote && helperReady && !cameraClaimed && !remoteCamUrl) {
-            placeholder = (
-                <div className="note-block">
-                    <p>
-                        <b>Remote session</b>{" "}
-                        — this machine is on the robot's LAN but isn't the robot itself. Driving, telemetry and the
-                        MID360 all work from here; the RealSense is attached to the robot.
-                    </p>
-                    <p>If the robot is also running G1 Ctrl, view its camera feed:</p>
-                </div>
-            )
-            placeholderButton = { label: "View robot's camera stream", variant: "good", run: useRobotStream }
+            placeholder = {
+                title: "Remote session",
+                message: (
+                    <>
+                        <p>
+                            This machine is on the robot's LAN but isn't the robot itself. Driving, telemetry and the
+                            MID360 all work from here; the RealSense is attached to the robot.
+                        </p>
+                        <p>If the robot is also running G1 Ctrl, view its camera feed:</p>
+                    </>
+                ),
+            }
+            placeholderButton = { label: "View robot's camera stream", variant: "ok", run: useRobotStream }
         } else if (!helperReady) {
-            placeholder = "Waiting for the onboard helper…"
+            placeholder = { message: "Waiting for the onboard helper…" }
         } else if (cameraClaimed) {
-            placeholder = devices?.camera === false
-                ? "Camera off — device busy (Unitree's videohub owns it?) or unplugged. Retrying…"
-                : "Connecting to camera stream…"
+            placeholder = {
+                message: devices?.camera === false
+                    ? "Camera off — device busy (Unitree's videohub owns it?) or unplugged. Retrying…"
+                    : "Connecting to camera stream…",
+            }
             // a stock G1 boots Unitree's videohub holding the RealSense; the helper can only retry quietly
             placeholderButton = {
                 label: "Force takeover camera",
@@ -681,8 +592,8 @@ export function App() {
                     "Stops the robot's videohub service so the dash can open the RealSense. Anything else using that camera — the Unitree app included — loses video until you run `sudo systemctl start master_service` on the robot. The robot does not move.",
             }
         } else {
-            placeholder = "Camera not connected"
-            placeholderButton = { label: "Connect camera", variant: "good", run: () => setClaim("camera", true) }
+            placeholder = { message: "Camera not connected" }
+            placeholderButton = { label: "Connect camera", variant: "ok", run: () => setClaim("camera", true) }
         }
     }
 
@@ -698,6 +609,10 @@ export function App() {
         : state?.link.remote
         ? "Remote"
         : "Onboard"
+    const batteryTone: Tone = battery
+        ? (battery.percent <= BATTERY_RESERVE ? "danger" : battery.percent <= BATTERY_WARN ? "warn" : "ok")
+        : "default"
+    const dash = "—"
 
     return (
         <div className="stage">
@@ -717,453 +632,355 @@ export function App() {
                     }}
                 />
                 <canvas id="cam-canvas" ref={camCanvas} />
-                <div className="cam-ph">
-                    <div className="glyph">
-                        <Icon name="camera" size={46} />
-                    </div>
-                    <div>{placeholder}</div>
-                    {placeholderButton && (
-                        <button
-                            type="button"
-                            className={`dim-btn act ${placeholderButton.variant} ph-connect`}
-                            title={placeholderButton.title}
-                            onClick={placeholderButton.run}
-                        >
-                            {placeholderButton.label}
-                        </button>
-                    )}
-                </div>
-            </div>
-            <div className="vignette" />
-
-            <div className="topbar" ref={topbar}>
-                <button
-                    type="button"
-                    className="dim-btn icon ghost panels-btn"
-                    title="show/hide the telemetry panels"
-                    aria-label="panels"
-                    onClick={() => setPanelsOpen((open) => !open)}
-                >
-                    <Icon name="menu" />
-                </button>
-                {/* inside Desktop, its window bar already shows the app's icon and name */}
-                {window.parent === window && (
-                    <div className="brand">
-                        <BrandMark />
-                        <span className="dim-title name">G1 Ctrl</span>
-                    </div>
+                {placeholder && (
+                    <EmptyState
+                        layer
+                        icon="camera"
+                        className="cam-placeholder"
+                        title={placeholder.title}
+                        message={placeholder.message}
+                        actions={placeholderButton && (
+                            <Button
+                                variant={placeholderButton.variant}
+                                title={placeholderButton.title}
+                                onClick={placeholderButton.run}
+                            >
+                                {placeholderButton.label}
+                            </Button>
+                        )}
+                    />
                 )}
-                <div className={"dim-badge pill " + (helperReady ? "ok" : "danger")}>
-                    <span className="dot" />
-                    <span>{state ? linkLabel : "Connecting…"}</span>
-                </div>
-                <div className="dim-badge subs">
-                    <span
-                        className={"s" +
-                            (devices?.unitree === true ? " up" : devices?.unitree === false ? " down" : "")}
-                    >
-                        <span className="dot" />SDK
-                    </span>
-                    <span
-                        className={"s click" +
-                            (devices?.lidar === true ? " up" : devices?.lidar === false ? " down" : "")}
-                        title={lidarClaimed
-                            ? "MID360 claimed by the dash — click to release it for other apps"
-                            : "MID360 released — click to connect"}
-                        onClick={() => setClaim("lidar", !lidarClaimed)}
-                    >
-                        <span className="dot" />MID360
-                    </span>
-                    <span
-                        className={"s click" +
-                            (devices?.camera === true ? " up" : devices?.camera === false ? " down" : "")}
-                        title={cameraClaimed
-                            ? "Camera claimed by the dash — click to release it for other apps"
-                            : "Camera released — click to connect"}
-                        onClick={() => setClaim("camera", !cameraClaimed)}
-                    >
-                        <span className="dot" />RS
-                    </span>
-                </div>
-                <div
-                    className={modeClass}
+            </div>
+
+            <Toolbar floating className="topbar">
+                <IconButton
+                    icon="panels"
+                    label="show/hide the telemetry panels"
+                    className="panels-btn"
+                    onClick={() => setPanelsOpen((open: boolean) => !open)}
+                />
+                {/* inside Desktop, its window bar already shows the app's icon and name */}
+                {window.parent === window && <Text className="brand">G1 Ctrl</Text>}
+                <Badge dot tone={helperReady ? "ok" : "danger"}>{state ? linkLabel : "Connecting…"}</Badge>
+                <Text small>
+                    <StatusDot tone={deviceTone(devices?.unitree)} /> SDK
+                </Text>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    title={lidarClaimed
+                        ? "MID360 claimed by the dash — click to release it for other apps"
+                        : "MID360 released — click to connect"}
+                    onClick={() => setClaim("lidar", !lidarClaimed)}
+                >
+                    <StatusDot tone={deviceTone(devices?.lidar)} />
+                    MID360
+                </Button>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    title={cameraClaimed
+                        ? "Camera claimed by the dash — click to release it for other apps"
+                        : "Camera released — click to connect"}
+                    onClick={() => setClaim("camera", !cameraClaimed)}
+                >
+                    <StatusDot tone={deviceTone(devices?.camera)} />
+                    RS
+                </Button>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mode"
                     title={modeTitle}
                     onClick={async () => {
-                        if (await copyText(modeText)) {
-                            setCopied(true)
-                            setTimeout(() => setCopied(false), 700)
-                            showToast("copied: " + modeText)
-                        } else {
-                            showToast("couldn't copy — " + modeText)
-                        }
+                        showToast(await copyText(modeText) ? "copied: " + modeText : "couldn't copy — " + modeText)
                     }}
                 >
-                    {modeText}
-                </div>
+                    <Badge tone={modeTone}>
+                        <Text mono>{modeText}</Text>
+                    </Badge>
+                </Button>
                 {battery && (
-                    <div
-                        className={"dim-badge dim-mono pill " + (battery.percent <= BATTERY_RESERVE
-                            ? "danger"
-                            : battery.percent <= BATTERY_WARN
-                            ? "warn"
-                            : "ok")}
-                        title="battery charge, and estimated time until 5% reserve"
-                    >
-                        <span className="dot" />
-                        <span>{battery.percent}%{battery.remaining ? " - " + battery.remaining : ""}</span>
-                    </div>
+                    <Badge dot tone={batteryTone} title="battery charge, and estimated time until 5% reserve">
+                        <Text mono>{battery.percent}%{battery.remaining ? " - " + battery.remaining : ""}</Text>
+                    </Badge>
                 )}
                 {hot && (
-                    <div
-                        className={"dim-badge dim-mono pill " + tempLevel}
-                        title="hottest motor — the hotter it runs, the sooner it derates"
-                    >
-                        <span className="dot" />
-                        <span>{hot.celsius.toFixed(0)}°C{hot.name ? " " + hot.name : ""}</span>
-                    </div>
+                    <Badge dot tone={tempTone} title="hottest motor — the hotter it runs, the sooner it derates">
+                        <Text mono>{hot.celsius.toFixed(0)}°C{hot.name ? " " + hot.name : ""}</Text>
+                    </Badge>
                 )}
-                <div className="spacer" />
-                <button
-                    type="button"
-                    className="dim-btn danger estop"
-                    title="Zero velocity + Damp (Space)"
-                    onClick={estop}
-                >
+                <Spacer />
+                <Button variant="danger" className="estop" title="Zero velocity + Damp (Space)" onClick={estop}>
                     E-STOP
-                </button>
-            </div>
+                </Button>
+            </Toolbar>
 
             <div className={"left-col" + (panelsOpen ? " open" : "")}>
-                <div className="rail">
-                    <Card title="Speed" collapsed={collapsed.has("Speed")} onToggle={() => toggleCard("Speed")}>
-                        <div className={"speed" + (tuned ? " tuned" : "")}>
-                            <label htmlFor="sp-vx">
-                                linear{" "}
-                                <span className="v">{speeds ? `${speeds.linearSpeed.toFixed(2)} m/s` : "—"}</span>
-                            </label>
-                            <input
-                                className="dim-range"
-                                type="range"
-                                id="sp-vx"
-                                min={DRIVE_LIMITS.linearSpeed[0]}
-                                max={DRIVE_LIMITS.linearSpeed[1]}
-                                step="0.05"
-                                value={speeds?.linearSpeed ?? DRIVE_DEFAULTS.linearSpeed}
-                                onChange={(e) => saveSpeed("linearSpeed", parseFloat(e.target.value))}
-                            />
-                            <label htmlFor="sp-omega">
-                                turn <span className="v">{speeds ? `${speeds.turnSpeed.toFixed(2)} rad/s` : "—"}</span>
-                            </label>
-                            <input
-                                className="dim-range"
-                                type="range"
-                                id="sp-omega"
-                                min={DRIVE_LIMITS.turnSpeed[0]}
-                                max={DRIVE_LIMITS.turnSpeed[1]}
-                                step="0.05"
-                                value={speeds?.turnSpeed ?? DRIVE_DEFAULTS.turnSpeed}
-                                onChange={(e) => saveSpeed("turnSpeed", parseFloat(e.target.value))}
-                            />
-                            <div className="speed-foot">
-                                <span>Shift boosts &times;1.6</span>
-                                <button
-                                    type="button"
-                                    onClick={() =>
-                                        call("PUT", "api/settings", { reset: true }).then(
-                                            (s) => setSpeeds(s as Settings),
-                                            (e) => showToast(message(e)),
-                                        )}
-                                >
-                                    reset
-                                </button>
-                            </div>
-                        </div>
-                    </Card>
+                <Panel glass collapsible persistKey="g1.speed" title="Speed">
+                    <Field
+                        label="linear"
+                        hint={tuned ? "tuned" : undefined}
+                    >
+                        <Slider
+                            min={DRIVE_LIMITS.linearSpeed[0]}
+                            max={DRIVE_LIMITS.linearSpeed[1]}
+                            step={0.05}
+                            value={speeds?.linearSpeed ?? DRIVE_DEFAULTS.linearSpeed}
+                            format={(v: number) => speeds ? `${v.toFixed(2)} m/s` : dash}
+                            onChange={(v: number) => saveSpeed("linearSpeed", v)}
+                        />
+                    </Field>
+                    <Field label="turn">
+                        <Slider
+                            min={DRIVE_LIMITS.turnSpeed[0]}
+                            max={DRIVE_LIMITS.turnSpeed[1]}
+                            step={0.05}
+                            value={speeds?.turnSpeed ?? DRIVE_DEFAULTS.turnSpeed}
+                            format={(v: number) => speeds ? `${v.toFixed(2)} rad/s` : dash}
+                            onChange={(v: number) => saveSpeed("turnSpeed", v)}
+                        />
+                    </Field>
+                    <div className="row-between">
+                        <Text muted small>Shift boosts ×1.6</Text>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() =>
+                                call("PUT", "api/settings", { reset: true }).then(
+                                    (s) => setSpeeds(s as Settings),
+                                    (e) => showToast(message(e)),
+                                )}
+                        >
+                            reset
+                        </Button>
+                    </div>
+                </Panel>
 
-                    <Card title="Robot" collapsed={collapsed.has("Robot")} onToggle={() => toggleCard("Robot")}>
-                        <div className="kv">
-                            <span className="k">controller</span>
-                            <span className="v">
-                                {loco
+                <Panel glass collapsible persistKey="g1.robot" title="Robot">
+                    <KeyValue
+                        items={[
+                            [
+                                "controller",
+                                loco
                                     ? (loco.fsm < 0 ? "unreachable" : mode ? `${mode} (${loco.fsm})` : loco.fsm)
-                                    : "—"}
-                            </span>
-                            <span className="k">motion svc</span>
-                            <span className="v">{loco?.motionMode ?? "—"}</span>
-                            <span className="k">FSM machine</span>
-                            <span className="v">{state?.fsmMachine ?? "—"}</span>
-                        </div>
-                    </Card>
+                                    : dash,
+                            ],
+                            ["motion svc", loco?.motionMode ?? dash],
+                            ["FSM machine", state?.fsmMachine ?? dash],
+                        ]}
+                    />
+                </Panel>
 
-                    <Card
-                        title="Attitude"
-                        collapsed={collapsed.has("Attitude")}
-                        onToggle={() => toggleCard("Attitude")}
-                    >
-                        <div className="horizon">
-                            <div
-                                className="sky"
-                                style={attitude
-                                    ? {
-                                        transform: `rotate(${(-deg(attitude.roll)).toFixed(1)}deg) translateY(${
-                                            pitchPx.toFixed(0)
-                                        }px)`,
-                                    }
-                                    : undefined}
+                <Panel glass collapsible persistKey="g1.attitude" title="Attitude">
+                    <AttitudeIndicator
+                        roll={attitude?.roll ?? null}
+                        pitch={attitude?.pitch ?? null}
+                        yaw={attitude?.yaw ?? null}
+                    />
+                    <KeyValue
+                        items={[
+                            ["roll", attitude ? deg(attitude.roll).toFixed(1) + "°" : dash],
+                            ["pitch", attitude ? deg(attitude.pitch).toFixed(1) + "°" : dash],
+                        ]}
+                    />
+                </Panel>
+
+                <Panel glass collapsible persistKey="g1.health" title="Health">
+                    <KeyValue
+                        items={[
+                            [
+                                "hottest joint",
+                                <Text tone={tempTone === "danger" ? "danger" : undefined}>
+                                    {hot ? `${hot.celsius.toFixed(0)}°C${hot.name ? ` (${hot.name})` : ""}` : dash}
+                                </Text>,
+                            ],
+                            [
+                                "nearest obst.",
+                                <Text tone={lidarInfo?.nearest != null && lidarInfo.nearest < 0.6 ? "warn" : undefined}>
+                                    {lidarInfo?.nearest != null ? lidarInfo.nearest.toFixed(2) + " m" : dash}
+                                </Text>,
+                            ],
+                            ["lidar pts/s", lidarInfo?.points ? lidarInfo.points.toLocaleString() : dash],
+                            ["camera fps", cameraStats.fps || dash],
+                            [
+                                "camera lag",
+                                <Text
+                                    tone={cameraStats.lagMs !== null && cameraStats.lagMs > 500 ? "danger" : undefined}
+                                >
+                                    {cameraStats.lagMs === null ? dash : `${Math.round(cameraStats.lagMs)} ms`}
+                                </Text>,
+                            ],
+                        ]}
+                    />
+                </Panel>
+
+                <Panel
+                    glass
+                    collapsible
+                    persistKey="g1.pose"
+                    title="Pose"
+                    className={"view-panel" + (poseBig ? " big" : "")}
+                    actions={
+                        <>
+                            <Text muted mono small>{poseText}</Text>
+                            <IconButton
+                                size="sm"
+                                icon={poseBig ? "shrink" : "expand"}
+                                label={poseBig ? "Shrink" : "Expand"}
+                                pressed={poseBig}
+                                onClick={() => setPoseBig((big: boolean) => !big)}
                             />
-                            <div className="cross" />
-                            <div className="yaw">yaw {attitude ? deg(attitude.yaw).toFixed(0) : "—"}°</div>
-                        </div>
-                        <div className="kv" style={{ marginTop: 9 }}>
-                            <span className="k">roll</span>
-                            <span className="v">{attitude ? deg(attitude.roll).toFixed(1) + "°" : "—"}</span>
-                            <span className="k">pitch</span>
-                            <span className="v">{attitude ? deg(attitude.pitch).toFixed(1) + "°" : "—"}</span>
-                        </div>
-                    </Card>
-
-                    <Card title="Health" collapsed={collapsed.has("Health")} onToggle={() => toggleCard("Health")}>
-                        <div className="kv">
-                            <span className="k">hottest joint</span>
-                            <span className={"v" + (tempLevel === "danger" ? " hot" : "")}>
-                                {hot ? `${hot.celsius.toFixed(0)}°C${hot.name ? ` (${hot.name})` : ""}` : "—"}
-                            </span>
-                            <span className="k">nearest obst.</span>
-                            <span
-                                className={"v" + (lidarInfo?.nearest != null && lidarInfo.nearest < 0.6 ? " near" : "")}
-                            >
-                                {lidarInfo?.nearest != null ? lidarInfo.nearest.toFixed(2) + " m" : "—"}
-                            </span>
-                            <span className="k">lidar pts/s</span>
-                            <span className="v">{lidarInfo?.points ? lidarInfo.points.toLocaleString() : "—"}</span>
-                            <span className="k">camera fps</span>
-                            <span className="v">{cameraStats.fps || "—"}</span>
-                            <span className="k">camera lag</span>
-                            <span
-                                className={"v" + (cameraStats.lagMs !== null && cameraStats.lagMs > 500 ? " hot" : "")}
-                            >
-                                {cameraStats.lagMs === null ? "—" : `${Math.round(cameraStats.lagMs)} ms`}
-                            </span>
-                        </div>
-                    </Card>
-                </div>
-
-                <div
-                    className={"dim-panel glass card pose-card" + (poseBig ? " big" : "") +
-                        (collapsed.has("POSE") ? " collapsed" : "")}
+                        </>
+                    }
                 >
-                    <div className="pose-head">
-                        <h3 className="dim-label" title="click to collapse / expand" onClick={() => toggleCard("POSE")}>
-                            <span className="chev">
-                                <Icon name="chevron-down" size={10} />
-                            </span>POSE
-                        </h3>
-                        <span className="m">{poseText}</span>
-                        <button
-                            type="button"
-                            className={"dim-btn icon ghost expand" + (poseBig ? " on" : "")}
-                            title={poseBig ? "Shrink" : "Expand"}
-                            aria-label="Expand"
-                            onClick={() => setPoseBig((big) => !big)}
-                        >
-                            <Icon name={poseBig ? "shrink" : "expand"} />
-                        </button>
-                    </div>
-                    <canvas ref={poseCanvas} />
-                </div>
-
-                <div
-                    className={"dim-panel glass card lidar-card" + (lidarBig ? " big" : "") +
-                        (collapsed.has("MID360") ? " collapsed" : "")}
-                >
-                    <div className="lidar-head">
-                        <h3
-                            className="dim-label"
-                            title="click to collapse / expand"
-                            onClick={() => toggleCard("MID360")}
-                        >
-                            <span className="chev">
-                                <Icon name="chevron-down" size={10} />
-                            </span>MID360
-                        </h3>
-                        <span className="m">{lidarInfo ? `${(lidarInfo.points / 1000).toFixed(0)}k pts` : "—"}</span>
-                        <button
-                            type="button"
-                            className="dim-btn sm ghost expand"
-                            id="lidar-conn"
-                            onClick={() => setClaim("lidar", !lidarClaimed)}
-                        >
-                            {lidarClaimed ? "Release" : "Connect"}
-                        </button>
-                        <button
-                            type="button"
-                            className={"dim-btn icon ghost expand" + (lidarBig ? " on" : "")}
-                            title={lidarBig ? "Shrink" : "Expand"}
-                            aria-label="Expand"
-                            onClick={() => setLidarBig((big) => !big)}
-                        >
-                            <Icon name={lidarBig ? "shrink" : "expand"} />
-                        </button>
-                    </div>
-                    <canvas ref={lidarCanvas} />
-                </div>
-            </div>
-
-            <div className={"dim-panel glass dim-mono vel" + (held.size ? " on" : "")}>
-                <div className="row">
-                    <span>vx</span>
-                    <span>{velocity.vx.toFixed(2)}</span>
-                </div>
-                <div className="row">
-                    <span>vy</span>
-                    <span>{velocity.vy.toFixed(2)}</span>
-                </div>
-                <div className="row">
-                    <span>ω</span>
-                    <span>{velocity.omega.toFixed(2)}</span>
-                </div>
-            </div>
-
-            <div className="dpad">
-                {DPAD.map(({ dir, icon, help }) => (
-                    <button
-                        key={dir}
-                        type="button"
-                        className={`dim-btn icon db ${dir}` + (held.has(dir) ? " held" : "") +
-                            (drivable ? "" : " blocked")}
-                        title={drivable
-                            ? help
-                            : `driving needs mode: ${DRIVING_MODES.join(", ")} — robot is in ${mode}`}
-                        onPointerDown={(e) => {
-                            e.preventDefault()
-                            pressPad(dir, true)
-                        }}
-                        onPointerUp={() => pressPad(dir, false)}
-                        onPointerLeave={() => held.has(dir) && pressPad(dir, false)}
-                        onPointerCancel={() => pressPad(dir, false)}
+                    <Scene3D
+                        fixedFrame="world"
+                        className="view"
+                        cameraPosition={[1.05, -1.05, 0.95]}
+                        cameraTarget={[0, 0, 0.6]}
                     >
-                        <Icon name={icon} />
-                    </button>
-                ))}
+                        <Skeleton
+                            positions={state?.jointPositions ?? null}
+                            rpy={attitude ? [attitude.roll, attitude.pitch, attitude.yaw] : null}
+                        />
+                    </Scene3D>
+                </Panel>
+
+                <Panel
+                    glass
+                    collapsible
+                    persistKey="g1.lidar"
+                    title="MID360"
+                    className={"view-panel" + (lidarBig ? " big" : "")}
+                    actions={
+                        <>
+                            <Text muted mono small>
+                                {lidarInfo ? `${(lidarInfo.points / 1000).toFixed(0)}k pts` : dash}
+                            </Text>
+                            <Button variant="ghost" size="sm" onClick={() => setClaim("lidar", !lidarClaimed)}>
+                                {lidarClaimed ? "Release" : "Connect"}
+                            </Button>
+                            <IconButton
+                                size="sm"
+                                icon={lidarBig ? "shrink" : "expand"}
+                                label={lidarBig ? "Shrink" : "Expand"}
+                                pressed={lidarBig}
+                                onClick={() => setLidarBig((big: boolean) => !big)}
+                            />
+                        </>
+                    }
+                >
+                    <Scene3D
+                        fixedFrame="world"
+                        className="view"
+                        cameraPosition={[-3.4, -3.4, 2.6]}
+                        cameraTarget={[0, 0, 0.4]}
+                    >
+                        {cloud && (
+                            <PointCloud
+                                points={cloud}
+                                frame=""
+                                colorMode="height"
+                                rangeMin={-0.5}
+                                rangeMax={2}
+                                size={0.035}
+                                style="disc"
+                            />
+                        )}
+                        <RobotModel kind="humanoid" pose={{ x: 0, y: 0, z: 0.8, yaw: 0 }} />
+                    </Scene3D>
+                </Panel>
             </div>
 
-            <div className={"scrim" + (panelsOpen ? " open" : "")} onClick={() => setPanelsOpen(false)} />
-            <div className="dock" ref={dock}>
+            <div className="drive">
+                <KeyValue
+                    className={"vel dr-glass" + (held.size ? " on" : "")}
+                    items={[
+                        ["vx", velocity.vx.toFixed(2)],
+                        ["vy", velocity.vy.toFixed(2)],
+                        ["ω", velocity.omega.toFixed(2)],
+                    ]}
+                />
+                <div className="dpad">
+                    {DPAD.map(({ dir, icon, help }) => (
+                        <IconButton
+                            key={dir}
+                            icon={icon}
+                            size="lg"
+                            variant="default"
+                            className={drivable ? undefined : "blocked"}
+                            pressed={held.has(dir)}
+                            label={drivable
+                                ? help
+                                : `driving needs mode: ${DRIVING_MODES.join(", ")} — robot is in ${mode}`}
+                            style={{ touchAction: "none" }}
+                            onPointerDown={(e: React.PointerEvent) => {
+                                e.preventDefault()
+                                pressPad(dir, true)
+                            }}
+                            onPointerUp={() => pressPad(dir, false)}
+                            onPointerLeave={() => held.has(dir) && pressPad(dir, false)}
+                            onPointerCancel={() => pressPad(dir, false)}
+                            onContextMenu={(e: React.MouseEvent) => e.preventDefault()}
+                        />
+                    ))}
+                </div>
+            </div>
+
+            {panelsOpen && <div className="scrim" onClick={() => setPanelsOpen(false)} />}
+            <Toolbar floating className="dock">
                 {commands.filter((command) => !command.advanced).map((command) => (
-                    <button
+                    <Button
                         key={command.id}
-                        type="button"
-                        className={"dim-btn act " + (command.tone ?? "") + (command.active ? " on" : "")}
+                        variant={TONE_VARIANT[command.tone ?? ""] ?? "default"}
+                        pressed={command.active || undefined}
                         disabled={!!command.blocked}
                         title={command.title}
                         onClick={() => runCommand(command)}
                     >
                         {command.label}
-                    </button>
+                    </Button>
                 ))}
-            </div>
-            <div className="dim-toasts toast-stack">
-                <div className={"dim-toast toast" + (toast ? " show" : "")}>{toast}</div>
-            </div>
+            </Toolbar>
 
-            <div
-                className={"dim-panel glass palette" + (paletteOpen ? " show" : "")}
-            >
-                <input
-                    ref={paletteInput}
-                    type="text"
-                    placeholder="Search actions… (↑↓ select · Enter run · Esc close)"
-                    autoComplete="off"
-                    spellCheck={false}
-                    value={paletteQuery}
-                    onChange={(e) => {
-                        setPaletteQuery(e.target.value)
-                        setPaletteIndex(0)
-                    }}
-                    onBlur={() => setTimeout(() => setPaletteOpen(false), 150)}
-                    onKeyDown={(e) => {
-                        e.stopPropagation() // typed W/A/Space must not drive or E-STOP the robot
-                        e.nativeEvent.stopImmediatePropagation()
-                        if (e.code === "ArrowDown") {
-                            e.preventDefault()
-                            setPaletteIndex(selected + 1)
-                        } else if (e.code === "ArrowUp") {
-                            e.preventDefault()
-                            setPaletteIndex(Math.max(0, selected - 1))
-                        } else if (e.code === "Enter") {
-                            e.preventDefault()
-                            firePalette(selected)
-                        }
-                    }}
-                />
-                <div className="palette-list">
-                    {paletteMatches.length === 0 && <div className="palette-empty">No matching action</div>}
-                    {paletteMatches.map((action, i) => (
-                        <div
-                            key={action.label}
-                            className={"palette-item" + (i === selected ? " sel" : "") +
-                                (action.danger ? ` ${action.danger}-danger` : "") + (action.blocked ? " blocked" : "")}
-                            ref={(element) => {
-                                if (i === selected) {
-                                    element?.scrollIntoView?.({ block: "nearest" })
-                                }
+            <CommandPalette
+                open={paletteOpen}
+                onClose={() => setPaletteOpen(false)}
+                commands={paletteCommands}
+                placeholder="Search actions… (drive: W/S A/D Q/E · Space E-STOP)"
+            />
+
+            <Modal
+                open={!!confirm}
+                onClose={() => setConfirm(null)}
+                size="sm"
+                title={confirm &&
+                    (confirm.command.confirmTitle
+                        ? `${confirm.command.label} — ${confirm.command.confirmTitle}`
+                        : confirm.command.danger === "red"
+                        ? `${confirm.command.label} — robot will drop`
+                        : `${confirm.command.label} — robot will self-balance`)}
+                footer={confirm && (
+                    <>
+                        {/* Cancel first: the modal focuses it, so a stray Enter backs out; Tab reaches confirm */}
+                        <Button onClick={() => setConfirm(null)}>Cancel</Button>
+                        <Button
+                            variant={confirm.command.danger === "red" ? "danger" : "warn"}
+                            onClick={() => {
+                                const run = confirm.run
+                                setConfirm(null)
+                                run()
                             }}
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => firePalette(i)}
                         >
-                            <span>{action.label}</span>
-                            {action.hint && <span className="hint dim-label">{action.hint}</span>}
-                        </div>
-                    ))}
-                </div>
-                <div className="palette-foot">
-                    drive: W/S fwd·back &nbsp;A/D turn &nbsp;Q/E strafe &nbsp;Shift boost &nbsp;·&nbsp; Space E-STOP
-                </div>
-            </div>
-
-            <div
-                className={"confirm" + (confirm ? " show " + confirm.command.danger : "")}
-                onClick={(e) => e.target === e.currentTarget && setConfirm(null)}
-            >
-                {confirm && (
-                    <div className="confirm-box">
-                        <div className="glyph">
-                            <Icon name="warn" size={44} />
-                        </div>
-                        <h2 className="dim-h1">
-                            {confirm.command.confirmTitle
-                                ? `${confirm.command.label} — ${confirm.command.confirmTitle}`
-                                : confirm.command.danger === "red"
-                                ? `${confirm.command.label} — robot will drop`
-                                : `${confirm.command.label} — robot will self-balance`}
-                        </h2>
-                        {/* the warnings are the app's own text (backend/g1.ts), with <b>/<br> for emphasis */}
-                        <p dangerouslySetInnerHTML={{ __html: confirm.command.warn ?? "" }} />
-                        <div className="confirm-actions">
-                            <button
-                                type="button"
-                                className="dim-btn"
-                                ref={cancelButton}
-                                onClick={() => setConfirm(null)}
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                type="button"
-                                className="dim-btn danger"
-                                id="confirm-go"
-                                onClick={() => {
-                                    const run = confirm.run
-                                    setConfirm(null)
-                                    run()
-                                }}
-                            >
-                                {confirm.command.label} now
-                            </button>
-                        </div>
-                    </div>
+                            {confirm.command.label} now
+                        </Button>
+                    </>
                 )}
-            </div>
+            >
+                {/* the warnings are the app's own text (backend/g1.ts), with <b>/<br> for emphasis */}
+                {confirm && <Text as="p" dangerouslySetInnerHTML={{ __html: confirm.command.warn ?? "" }} />}
+            </Modal>
         </div>
     )
 }

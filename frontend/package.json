@@ -9,14 +9,15 @@
         "typecheck": "tsc --noEmit"
     },
     "dependencies": {
+        "dimos-react": "https://codeload.github.com/jeff-hykin/dimos-react/tar.gz/refs/tags/v0.1.5",
         "react": "^19.1.0",
         "react-dom": "^19.1.0",
-        "three": "^0.160.1"
+        "three": "^0.180.0"
     },
     "devDependencies": {
         "@types/react": "^19.1.0",
         "@types/react-dom": "^19.1.0",
-        "@types/three": "^0.160.0",
+        "@types/three": "^0.180.0",
         "@vitejs/plugin-react": "^5.0.0",
         "typescript": "^5.9.0",
         "vite": "^7.1.0"
