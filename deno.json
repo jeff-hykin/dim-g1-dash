@@ -2,7 +2,7 @@
     "lock": false,
     "tasks": {
         "dev": "deno run -A --watch backend/main.ts",
-        "test": "deno test -A backend/",
+        "test": "deno test -A backend/ frontend/test/",
         "check": "deno check backend/main.ts && deno task check-endpoints",
         "check-endpoints": "deno run -A scripts/check_endpoints.ts"
     },
@@ -13,7 +13,8 @@
         "include": [
             "backend",
             "scripts",
-            "frontend/src"
+            "frontend/src",
+            "frontend/test"
         ],
         "exclude": [
             "frontend/src/joints.ts",

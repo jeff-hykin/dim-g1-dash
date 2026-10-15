@@ -1,8 +1,12 @@
 // dimos-app-server: this app's API and its built frontend on the unix socket Desktop gives (DIMOS_APP's `socket`, the
-// one interface: docs/apps.md), else port 8787 for a standalone run. `--frontend` is the nix wrapper's, not Desktop's.
-import { eventsSocket, handle } from "./http.ts"
+// one interface: docs/apps.md), else port 8787 (G1_DASH_PORT) for a standalone run. `--frontend` is the nix wrapper's, not Desktop's.
+import { initLog } from "./applog.ts"
+import { dimosApp } from "./dimos_app.ts"
+import { startHealth } from "./health.ts"
+import { eventsSocket, handle, publishEvent } from "./http.ts"
+import { recordingStatus, recoverRecordings } from "./recording.ts"
 import { DESCRIPTION, routes } from "./routes.ts"
-import { start } from "./robot.ts"
+import { linkKind, ready, snapshot, start } from "./robot.ts"
 
 function flag(name: string): string | undefined {
     const index = Deno.args.indexOf(`--${name}`)
@@ -43,9 +47,23 @@ async function serve(request: Request): Promise<Response> {
     return (await handle(request, routes, DESCRIPTION)) ?? file(path)
 }
 
+initLog()
+recoverRecordings() // a recording a quit or crash ended gets its footer, so it opens
 start() // the robot link: the native helper (or G1_SIMULATE=1)
+startHealth({
+    link: () => (linkKind() === "simulator" ? "simulator" : ready() ? "ready" : "down"),
+    lidarWatched: () => {
+        const state = snapshot()
+        return state.devices.lidarClaimed && ["walk", "primitive_walk", "stand", "stiffen"].includes(state.mode ?? "")
+    },
+    hottest: () => {
+        const hot = snapshot().hottestMotor
+        return hot ? { celsius: hot.celsius, name: hot.name } : null
+    },
+    onLidar: () => publishEvent({ type: "record", record: recordingStatus() }),
+})
 
-const socket: string | undefined = JSON.parse(Deno.env.get("DIMOS_APP") || "{}").socket
+const socket = dimosApp().socket
 if (socket) {
     try {
         Deno.removeSync(socket)
@@ -54,5 +72,5 @@ if (socket) {
     }
     Deno.serve({ path: socket, transport: "unix", onListen: () => console.error(`listening on ${socket}`) }, serve)
 } else {
-    Deno.serve({ port: 8787 }, serve)
+    Deno.serve({ port: Number(Deno.env.get("G1_DASH_PORT") ?? 8787) }, serve)
 }

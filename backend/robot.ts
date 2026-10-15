@@ -3,7 +3,12 @@
 // robot only through this module. A built-in simulator can stand in for the helper (G1_SIMULATE=1 or
 // api/simulator) so the panel and the agent can be exercised with no robot; it never runs while a real helper is up.
 import { publishEvent } from "./http.ts"
+import { logLine } from "./applog.ts"
 import { DRIVE_DEFAULTS, DRIVING_MODES, type ModeKey, MODES, MOTOR_NAMES, resolveMode } from "./g1.ts"
+import { rx } from "./health.ts"
+import { OverheatWatch, type Warning } from "./overheat.ts"
+import { record, recordingStatus, recordLidar, recordLog, setCameraSource } from "./recording.ts"
+import { SQUAT_MESSAGE, squatRefusal } from "./squat.ts"
 
 // deno-lint-ignore no-explicit-any -- helper events are free-form JSON
 type Json = Record<string, any>
@@ -55,6 +60,75 @@ export function logLines(limit: number) {
 function remember(level: string, message: string) {
     log.push({ at: new Date().toISOString(), level, message })
     log.splice(0, log.length - LOG_KEPT)
+    logLine(`${level}: ${message}`)
+    recordLog({ type: "log", level, message })
+}
+
+// ── the overheat warning (overheat.ts): raised from the helper's hottest-motor reading ──
+const overheat = new OverheatWatch()
+
+export function overheatWarning(): Warning | null {
+    return overheat.warning
+}
+
+function motorName(index: unknown): string | null {
+    return typeof index === "number" ? MOTOR_NAMES[index] ?? `motor ${index}` : null
+}
+
+/** A motor reached OVERHEAT_C: stop driving (velocity zero; moves are refused until it's acknowledged), tell the page
+ * (its warning and alarm), and log it. It never changes the robot's posture: the warning's Squat is the operator's. */
+function raiseOverheat(warning: Warning) {
+    cancelTimedMove()
+    try {
+        send({ type: "move", vx: 0, vy: 0, omega: 0 })
+    } catch {
+        // no link: nothing is driving
+    }
+    const text = `OVERHEAT: ${warning.joint ?? "a motor"} at ${warning.celsius}°C (warns at ${warning.limit}°C): ` +
+        "driving stopped until acknowledged"
+    recordLog({ type: "overheat", celsius: warning.celsius, joint: warning.joint, limit: warning.limit })
+    notify(text, "error")
+    publishEvent({ type: "overheat", overheat: warning })
+}
+
+/** Takes the warning down: driving works again, and it comes back 5°C hotter (or at 75°C once cooled to 70°C). */
+export function acknowledgeOverheat(how = "acknowledged") {
+    const warning = overheat.acknowledge()
+    if (!warning) {
+        return { acknowledged: false, note: "no overheat warning is up" }
+    }
+    const afterMs = Date.now() - warning.at
+    logLine(`OVERHEAT ${how} after ${Math.round(afterMs / 1000)} s (${warning.joint ?? "?"} at ${warning.celsius}°C)`)
+    recordLog({ type: "overheat_ack", how, celsius: warning.celsius, joint: warning.joint, afterMs })
+    publishEvent({ type: "overheat", overheat: null })
+    publishState()
+    return { acknowledged: true, warning, afterMs }
+}
+
+/** The controlled squat (squat.ts) — the overheat warning's default action and the gamepad's hold-B. Zeroes the
+ * velocity, then sends the helper's squat (FSM 706) only from a posture where that is a controlled crouch. Throws
+ * (with why) otherwise. `dryRun`: says what it would send. */
+export function squatDown(dryRun: boolean, why: string) {
+    const refusal = squatRefusal({
+        ready: ready(),
+        mode: currentMode(),
+        motionMode: loco?.motionMode ?? null,
+        sequenceRunning: loco?.seqRunning === true,
+    })
+    if (refusal) {
+        throw new Error(`Squat refused: ${refusal}`)
+    }
+    const stop = { type: "move", vx: 0, vy: 0, omega: 0 }
+    if (dryRun) {
+        return { dryRun: true, wouldSend: [stop, SQUAT_MESSAGE] }
+    }
+    cancelTimedMove()
+    send(stop)
+    send({ ...SQUAT_MESSAGE })
+    logLine(`squat (${why})`)
+    recordLog({ type: "squat", why })
+    notify(`Squat (${why}) — crouching`)
+    return { ok: true, sent: [stop, SQUAT_MESSAGE] }
 }
 
 // ── battery runtime: the BMS reports whole percents, so time each clean 1% step and take the median of the recent
@@ -147,6 +221,8 @@ export function snapshot() {
                 name: MOTOR_NAMES[hottest.hottestJoint] ?? null,
             }
             : null,
+        overheat: overheat.warning,
+        record: recordingStatus(),
         fsmMachine: telemetry?.fsmMachine ?? null,
         jointPositions: Array.isArray(telemetry?.q) ? telemetry!.q : null,
         telemetryAgeMs: telemetry ? Date.now() - telemetryAt : null,
@@ -175,6 +251,7 @@ export function notify(message: string, level: "info" | "error" = "info") {
 
 /** One line from the helper (or the simulator). */
 export function onHelperEvent(event: Json) {
+    rx(String(event.type))
     switch (event.type) {
         case "ready":
             helperReady = true
@@ -185,14 +262,22 @@ export function onHelperEvent(event: Json) {
         case "state":
             telemetry = event
             telemetryAt = Date.now()
+            record("/state", event, telemetryAt)
             if (typeof event.soc === "number" && event.soc >= 0) {
                 trackBattery(event.soc)
+            }
+            if (typeof event.hottestTemp === "number" && event.hottestTemp >= 0) {
+                const raised = overheat.check(event.hottestTemp, motorName(event.hottestJoint))
+                if (raised) {
+                    raiseOverheat(raised)
+                }
             }
             break
         case "loco": {
             const before = currentMode()
             loco = event
             locoAt = Date.now()
+            record("/loco", event, locoAt)
             if (currentMode() !== before) {
                 publishEvent({ type: "mode", mode: currentMode() })
             }
@@ -200,6 +285,7 @@ export function onHelperEvent(event: Json) {
         }
         case "seq":
             sequence = { name: event.seq, step: event.step, state: event.state, at: new Date().toISOString() }
+            recordLog({ type: "seq", ...sequence })
             publishEvent({ type: "seq", sequence })
             break
         case "lidar":
@@ -209,6 +295,7 @@ export function onHelperEvent(event: Json) {
                 cloud: Array.isArray(event.cloud) ? event.cloud : [],
                 at: Date.now(),
             }
+            recordLidar(lidar.cloud, lidar.at)
             publishEvent({ type: "lidar", points: lidar.points, nearest: lidar.nearest, cloud: lidar.cloud })
             return
         case "log":
@@ -236,6 +323,11 @@ export function send(message: Json) {
         throw new Error(note ?? "the robot's helper isn't running")
     }
     transport.send(message)
+    if (message.type === "move") {
+        record("/cmd_vel", { vx: message.vx, vy: message.vy, omega: message.omega })
+    } else {
+        record("/robot_action", message)
+    }
 }
 
 // ── the real helper ──
@@ -322,6 +414,9 @@ async function startHelper() {
 
 /** Connects to the robot: the helper, or the simulator when G1_SIMULATE=1. */
 export function start() {
+    setCameraSource(() =>
+        ready() && status.camera === true ? `http://127.0.0.1:${cameraPort()}/stream?t=${Date.now()}` : null
+    )
     if (Deno.env.get("G1_SIMULATE") === "1") {
         startSimulator()
         return
@@ -337,6 +432,7 @@ export function useTestTransport(sink: ((message: Json) => void) | null) {
     reset()
     transport = sink ? { kind: "test", send: sink, stop: () => {} } : null
     helperReady = sink !== null
+    overheat.reset()
 }
 
 // ── camera takeover: on a stock G1 Unitree's videohub_pc4 holds the RealSense from boot and master_service respawns
@@ -424,6 +520,16 @@ const SIM_FSM: Record<string, [number, number]> = {
     balancestand: [801, 0],
 }
 let simTimers: number[] = []
+/** the simulator's hottest motor, when api/overheat/simulate set it */
+let simHot: number | null = null
+
+/** Simulator only: the simulated robot's hottest motor reads `celsius` from now on (null: back to normal). */
+export function simulateMotorTemp(celsius: number | null) {
+    if (transport?.kind !== "simulator") {
+        throw new Error("only the simulator can fake a motor temperature (PUT api/simulator { enabled: true })")
+    }
+    simHot = celsius
+}
 
 export function simulatorRunning() {
     return transport?.kind === "simulator"
@@ -436,6 +542,8 @@ export function startSimulator() {
     wantHelper = false
     transport?.stop()
     reset()
+    overheat.reset()
+    simHot = null
     note = null
     let fsm = 1
     let balance = 0
@@ -504,7 +612,7 @@ export function startSimulator() {
                 soc,
                 rpy: [0.02 * Math.sin(t), 0.03 * Math.sin(t / 1.7), 0.1 * t % (2 * Math.PI)],
                 hottestJoint: 3,
-                hottestTemp: 41 + 2 * Math.sin(t / 9),
+                hottestTemp: simHot ?? 41 + 2 * Math.sin(t / 9),
                 q: Array.from(
                     { length: 29 },
                     (_, i) => (fsm === 1 || fsm === 0 ? 0.4 : 0.15) * Math.sin(t + i) * (i % 3 === 0 ? 1 : 0.3),

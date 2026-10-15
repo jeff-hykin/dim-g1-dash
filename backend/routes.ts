@@ -11,7 +11,9 @@ import {
     MOVE_LIMITS,
     resolveCommand,
 } from "./g1.ts"
+import { logLine } from "./applog.ts"
 import { platform } from "./platform.ts"
+import { listRecordings, record, recordingStatus, recordLog, startRecording, stopRecording } from "./recording.ts"
 import * as robot from "./robot.ts"
 
 export const DESCRIPTION = "G1 Ctrl: drive and monitor a Unitree G1 humanoid from its onboard Jetson — modes, " +
@@ -54,6 +56,11 @@ function deliver(message: Record<string, unknown>, dryRun: unknown, extra: Recor
         throw new HttpError(503, (error as Error).message)
     }
     return { ok: true, sent: message, ...extra }
+}
+
+/** A short string argument (ids, labels, notes): trimmed and capped. */
+function text(value: unknown, max = 200): string {
+    return typeof value === "string" ? value.trim().slice(0, max) : ""
 }
 
 function commandsNow() {
@@ -227,6 +234,14 @@ export const routes: Route[] = [
                 throw new HttpError(400, "durationMs must be between 1 and 5000")
             }
             const state = robot.snapshot()
+            const moving = Math.abs(velocity.vx) + Math.abs(velocity.vy) + Math.abs(velocity.omega) > 1e-6
+            if (moving && state.overheat) {
+                throw new HttpError(
+                    409,
+                    `Robot overheating (${state.overheat.joint ?? "a motor"} at ${state.overheat.celsius}°C): ` +
+                        "acknowledge the warning first (POST api/overheat/ack)",
+                )
+            }
             const warning = state.drivable
                 ? undefined
                 : `driving needs mode walk or primitive_walk — robot is in ${state.mode}; the robot will likely ignore this`
@@ -446,5 +461,136 @@ export const routes: Route[] = [
             publishEvent({ type: "mode", mode: robot.currentMode() })
             return { simulator: robot.simulatorRunning() }
         },
+    },
+    {
+        method: "POST",
+        path: "api/squat",
+        description: "A CONTROLLED squat down (LocoClient FSM 706: the robot crouches onto its own legs under its " +
+            "controller) — the overheat warning's default action. MOVES THE ROBOT. Zeroes the velocity first. Refused " +
+            "unless the robot is up on its legs (walk, primitive_walk, stand, stiffen) with the 'ai' motion service " +
+            "resident and no sequence running, so it never damps or stands a squatting robot up.",
+        params: {
+            why: { type: "string", description: "what asked for it, for the log (e.g. overheat, gamepad)" },
+            dryRun: dryRunParam,
+        },
+        handler: ({ why, dryRun }) => {
+            try {
+                return robot.squatDown(dryRun === true || dryRun === "true", text(why, 40) || "api")
+            } catch (error) {
+                throw new HttpError(409, (error as Error).message)
+            }
+        },
+    },
+    {
+        method: "POST",
+        path: "api/overheat/ack",
+        description:
+            "Acknowledge the overheat warning (a motor at 75°C or more): silences it and lets driving resume; " +
+            "it comes back 5°C hotter, or at 75°C again once the motors cool to 70°C",
+        params: { how: { type: "string", description: "how it was answered, for the log (e.g. dismissed, squat)" } },
+        handler: ({ how }) => robot.acknowledgeOverheat(text(how, 40) || "acknowledged"),
+    },
+    {
+        method: "POST",
+        path: "api/overheat/simulate",
+        description: "Simulator only: make the simulated G1's hottest motor read celsius (default 76), to try the " +
+            "overheat warning and the motor-temperature badge; celsius: 0 puts it back to normal",
+        params: { celsius: { type: "number", description: "°C (0: back to the simulated normal)" } },
+        handler: ({ celsius }) => {
+            const value = number(celsius, "celsius", 76)
+            try {
+                robot.simulateMotorTemp(value > 0 ? value : null)
+            } catch (error) {
+                throw new HttpError(409, (error as Error).message)
+            }
+            return { ok: true, celsius: value > 0 ? value : null }
+        },
+    },
+    {
+        method: "POST",
+        path: "api/ui/press",
+        description: "For pages: a button the user pressed (its data-ui id): logged to g1-ctrl.log, published as a " +
+            "ui_press event and written to the recording's /logs",
+        params: {
+            id: { type: "string", required: true, description: "the button's id (data-ui), e.g. control.record" },
+            label: { type: "string", description: "its visible text or title, when that says more" },
+        },
+        handler: ({ id, label }) => {
+            const press = { id: text(id, 100), label: text(label, 100) }
+            logLine(`ui press: ${press.id}${press.label ? ` (${press.label})` : ""}`)
+            recordLog({ type: "ui_press", ...press })
+            publishEvent({ type: "ui_press", ...press })
+            return { ok: true }
+        },
+    },
+    {
+        method: "POST",
+        path: "api/joy",
+        description: "For pages: the raw gamepad (axes, then the triggers' travel; buttons 0/1) on every change — " +
+            "recorded on /joystick while a recording runs, never driven from",
+        params: { axes: { type: "array", required: true }, buttons: { type: "array", required: true } },
+        handler: ({ axes, buttons }) => {
+            if (!Array.isArray(axes) || !Array.isArray(buttons)) {
+                throw new HttpError(400, "axes and buttons must be arrays")
+            }
+            record("/joystick", { axes: axes.slice(0, 32).map(Number), buttons: buttons.slice(0, 32).map(Number) })
+            return { ok: true }
+        },
+    },
+    {
+        method: "POST",
+        path: "api/camera/video_note",
+        description:
+            "For pages: why the camera view didn't start or stopped (or that it recovered) — logged, published " +
+            "as a video_note event and written to the recording's /logs",
+        params: { note: { type: "string", required: true, description: "what happened" } },
+        handler: ({ note }) => {
+            const said = text(note, 300)
+            logLine(`video note: ${said}`)
+            recordLog({ type: "video_note", note: said })
+            publishEvent({ type: "video_note", note: said })
+            return { ok: true }
+        },
+    },
+    {
+        method: "GET",
+        path: "api/record",
+        description:
+            "The recording in progress: file, path, seconds, bytes, messages, lidar silence; or {active: false}",
+        handler: () => recordingStatus(),
+    },
+    {
+        method: "POST",
+        path: "api/record/start",
+        description: "Record to an .mcap in Desktop's recordings folder (g1/<date>_<time>_g1_<host>.mcap): state " +
+            "(IMU, joints, battery, hottest motor), loco FSM, lidar, camera, velocities sent, commands, gamepad, and " +
+            "/logs (presses, notices, overheat, health, Wi-Fi). Only ever started by a request like this one; it runs " +
+            "until api/record/stop or the app quits.",
+        handler: () => {
+            try {
+                const status = startRecording()
+                publishEvent({ type: "record", record: status })
+                return status
+            } catch (error) {
+                throw new HttpError(500, `couldn't start a recording: ${(error as Error).message}`)
+            }
+        },
+    },
+    {
+        method: "POST",
+        path: "api/record/stop",
+        description: "Stop the recording and finish its file",
+        handler: () => {
+            const result = stopRecording()
+            publishEvent({ type: "record", record: recordingStatus() })
+            return result
+        },
+    },
+    {
+        method: "GET",
+        path: "api/recordings",
+        description: "This app's recordings (its folder, then each .mcap: name, size, modified, still recording?), " +
+            "newest first",
+        handler: () => listRecordings(),
     },
 ]

@@ -205,3 +205,85 @@ html, body {
 .off-robot-body .dr-code {
     overflow-x: auto;
 }
+
+/* ── the overheat warning: over everything (driving is off) until acknowledged ── */
+.overheat-back {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    display: grid;
+    place-items: center;
+    padding: 16px;
+    background: color-mix(in srgb, var(--danger) 30%, transparent);
+}
+.overheat {
+    width: min(520px, 100%);
+    border: 2px solid var(--danger);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    color: var(--fg);
+    box-shadow: var(--shadow-lg);
+}
+.overheat > header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px 0;
+    color: var(--danger);
+    font: 600 22px var(--display);
+}
+.overheat-body {
+    padding: 12px 16px 4px;
+    font-size: 17px;
+    line-height: 1.45;
+}
+.overheat-body p {
+    margin: 0 0 10px;
+}
+.overheat-note {
+    font-size: 14px;
+    opacity: 0.8;
+}
+.overheat > footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 4px 16px 14px;
+}
+
+/* ── the motor-temperature badge, above the command dock; grows upward from 70 to 80°C ── */
+.heat-slot {
+    position: absolute;
+    left: 50%;
+    bottom: calc(76px + var(--dim-inset-bottom, 0px));
+    transform: translateX(-50%);
+    z-index: 9;
+    pointer-events: none;
+}
+.motor-heat {
+    transform-origin: bottom center;
+    transition: scale 0.4s;
+    padding: 4px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid currentColor;
+    background: color-mix(in srgb, var(--bg) 70%, transparent);
+    font: 600 14px var(--mono);
+    white-space: nowrap;
+}
+.motor-heat.blue {
+    color: var(--info);
+}
+.motor-heat.yellow {
+    color: var(--warn);
+}
+.motor-heat.red {
+    color: var(--danger);
+}
+.motor-heat.pulse {
+    animation: motor-heat-pulse 1s ease-in-out infinite;
+}
+@keyframes motor-heat-pulse {
+    50% {
+        background: color-mix(in srgb, currentColor 35%, var(--bg));
+    }
+}

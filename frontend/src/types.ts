@@ -35,7 +35,23 @@ export type RobotState = {
     jointPositions: number[] | null
     telemetryAgeMs: number | null
     lidar: { points: number; nearest: number | null; ageMs: number } | null
+    /** the overheat warning while it's up (backend/overheat.ts): moves are refused until it's acknowledged */
+    overheat: Overheat | null
+    record: RecordState
     settings: Settings
+}
+
+export type Overheat = { celsius: number; joint: string | null; at: number; limit: number }
+
+export type RecordState = {
+    active: boolean
+    file?: string
+    path?: string
+    startedAt?: number
+    seconds?: number
+    bytes?: number
+    messages?: number
+    lidarSilentS?: number | null
 }
 
 export type CommandInfo = {
@@ -61,3 +77,7 @@ export type AppEvent =
     | { type: "settings"; settings: Settings }
     | { type: "lidar"; points: number; nearest: number | null; cloud: number[] }
     | { type: "seq"; sequence: { name: string; step: string; state: string } }
+    | { type: "overheat"; overheat: Overheat | null }
+    | { type: "record"; record: RecordState }
+    | { type: "ui_press"; id: string; label: string }
+    | { type: "video_note"; note: string }

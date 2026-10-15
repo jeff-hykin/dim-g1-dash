@@ -2,6 +2,7 @@
 // over it. Every action goes through the backend (api.ts → backend/routes.ts), which Desktop's agent can call too;
 // what the robot is doing comes from api/state and the api/events/ws events. The UI is built from dimos-react.
 //   keyboard: W/S forward·back  A/D turn  Q/E strafe  Shift boost  Space E-STOP  / action search
+//   gamepad (gamepad.ts): left stick drive/strafe, right stick turn, LT/RB boost, B or LT+RT stop, hold B squat
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
     AttitudeIndicator,
@@ -26,11 +27,13 @@ import {
 import { PointCloud, RobotModel, Scene3D } from "dimos-react/three"
 import { call, events } from "./api.ts"
 import { type CameraStats, streamCamera } from "./camera.ts"
+import { STOPPED, type Velocity, velocityOf } from "./drive.ts"
+import type { Axes } from "./gamepad.ts"
+import { MotorHeat, OverheatWarning, PadChip, RecordButton, useGamepad } from "./Operator.tsx"
+import { logPress } from "./presses.ts"
 import { Skeleton } from "./skeleton.ts"
 import type { CommandInfo, RobotState, Settings } from "./types.ts"
 
-const BOOST = 1.6 // Shift
-const VY_RATIO = 0.4 / 0.6 // strafe as a fraction of forward
 const SEND_HZ = 15
 const DRIVE_LIMITS = { linearSpeed: [0.1, 1.2], turnSpeed: [0.2, 2.5] }
 const DRIVE_DEFAULTS = { linearSpeed: 0.6, turnSpeed: 1.5 }
@@ -52,7 +55,7 @@ const DPAD: { dir: Drive; icon: string; help: string }[] = [
 ]
 const TONE_VARIANT: Record<string, ButtonVariant> = { good: "ok", bad: "danger", warn: "warn" }
 type Drive = "fwd" | "back" | "sl" | "sr" | "tl" | "tr"
-type Velocity = { vx: number; vy: number; omega: number }
+const NO_AXES: Axes = { forward: 0, strafe: 0, turn: 0 }
 type Tone = "ok" | "warn" | "danger" | "info" | "default"
 
 const deg = (rad: number) => rad * 180 / Math.PI
@@ -82,6 +85,9 @@ export function App() {
     const [cloud, setCloud] = useState<Float32Array | null>(null)
 
     const keys = useRef({ fwd: false, back: false, sl: false, sr: false, tl: false, tr: false, boost: false })
+    const padAxes = useRef<Axes>(NO_AXES)
+    const padBoost = useRef(0)
+    const cameraFailed = useRef(false)
     const sendTimer = useRef<number | null>(null)
     const driveHintAt = useRef(0)
     const moveErrorAt = useRef(0)
@@ -120,6 +126,10 @@ export function App() {
                 refreshCommands()
             } else if (event.type === "notice") {
                 showToast(event.message)
+            } else if (event.type === "overheat") {
+                setState((current) => current && { ...current, overheat: event.overheat })
+            } else if (event.type === "record") {
+                setState((current) => current && { ...current, record: event.record })
             } else if (event.type === "settings") {
                 setSpeeds(event.settings)
             } else if (event.type === "lidar") {
@@ -161,7 +171,13 @@ export function App() {
         }
         setCameraMessage(null)
         const stop = streamCamera(camCanvas.current!, {
-            onFirstFrame: () => setCameraLive("canvas"),
+            onFirstFrame: () => {
+                setCameraLive("canvas")
+                if (cameraFailed.current) {
+                    cameraFailed.current = false
+                    call("POST", "api/camera/video_note", { note: "camera stream back (first frame)" }).catch(() => {})
+                }
+            },
             onStats: (stats) => {
                 setCameraStats(stats)
                 // ask the robot to ease off when the viewer is behind, and to let go once it catches up
@@ -174,6 +190,10 @@ export function App() {
                     if (!t.on && performance.now() - t.highSince > 3000) {
                         t.on = true
                         call("PUT", "api/camera/stream", { maxFps: 10 }).catch(() => {})
+                        call("POST", "api/camera/video_note", {
+                            note: `camera lag ${Math.round(stats.lagMs)} ms: capped at 10 fps`,
+                        })
+                            .catch(() => {})
                         showToast("Camera lagging — asked the robot for 10 fps")
                     }
                 } else {
@@ -186,6 +206,11 @@ export function App() {
                 }
             },
             onFail: () => {
+                if (!cameraFailed.current) {
+                    cameraFailed.current = true
+                    call("POST", "api/camera/video_note", { note: "camera stream offline (device busy or unplugged?)" })
+                        .catch(() => {})
+                }
                 setCameraLive(null)
                 setCameraMessage("Camera stream offline — retrying… (device busy or unplugged)")
                 setTimeout(() => setCameraAttempt((n) => n + 1), 3000)
@@ -210,6 +235,9 @@ export function App() {
             call("POST", "api/command", { command: command.id, confirm: true }).catch((error) =>
                 showToast(message(error))
             )
+        if (stateRef.current?.overheat && command.id === "walk") {
+            return showToast("Robot overheating — acknowledge the warning first")
+        }
         if (command.danger) {
             setConfirm({ command, run: fire })
         } else {
@@ -255,19 +283,24 @@ export function App() {
     }, [])
 
     // ── driving: keys/pad → api/move at 15 Hz while held; releasing sends a stop ──
+    // keys and the pad add up (drive.ts); nothing drives while the overheat warning is up
     const computeVelocity = useCallback((): Velocity => {
-        const k = keys.current
-        const speed = speedsRef.current ?? { ...DRIVE_DEFAULTS, robotIp: "" }
-        const boost = k.boost ? BOOST : 1
-        return {
-            vx: ((k.fwd ? 1 : 0) - (k.back ? 1 : 0)) * speed.linearSpeed * boost,
-            vy: ((k.sl ? 1 : 0) - (k.sr ? 1 : 0)) * speed.linearSpeed * VY_RATIO * boost,
-            omega: ((k.tl ? 1 : 0) - (k.tr ? 1 : 0)) * speed.turnSpeed * boost,
+        if (stateRef.current?.overheat) {
+            return STOPPED
         }
+        const k = keys.current
+        const keyAxes = {
+            forward: (k.fwd ? 1 : 0) - (k.back ? 1 : 0),
+            strafe: (k.sl ? 1 : 0) - (k.sr ? 1 : 0),
+            turn: (k.tl ? 1 : 0) - (k.tr ? 1 : 0),
+        }
+        const speed = speedsRef.current ?? { ...DRIVE_DEFAULTS, robotIp: "" }
+        return velocityOf(keyAxes, padAxes.current, speed, Math.max(k.boost ? 1 : 0, padBoost.current))
     }, [])
     const driving = () => {
         const k = keys.current
-        return k.fwd || k.back || k.sl || k.sr || k.tl || k.tr
+        const pad = padAxes.current
+        return k.fwd || k.back || k.sl || k.sr || k.tl || k.tr || !!(pad.forward || pad.strafe || pad.turn)
     }
     const sendMove = useCallback((v: Velocity) => {
         setVelocity(v)
@@ -303,8 +336,45 @@ export function App() {
         for (const key of Object.keys(keys.current) as (keyof typeof keys.current)[]) {
             keys.current[key] = false
         }
+        padAxes.current = NO_AXES
         updateDrive()
     }, [updateDrive])
+
+    // the overheat warning: let go of everything (the backend has already zeroed the velocity and refuses moves)
+    const overheatUp = !!state?.overheat
+    useEffect(() => {
+        if (overheatUp) {
+            releaseAll()
+        }
+    }, [overheatUp, releaseAll])
+
+    // ── the gamepad (gamepad.ts): its axes join the keys'; STOP is zero velocity (never E-STOP: that damps) ──
+    const squat = useCallback((why: string) => {
+        call("POST", "api/squat", { why }).catch((error) => showToast(message(error)))
+    }, [showToast])
+    const pad = useGamepad({
+        onAxes: (axes) => {
+            padAxes.current = axes
+            updateDrive()
+        },
+        onBoost: (boost) => {
+            padBoost.current = boost
+        },
+        stop: () => {
+            padAxes.current = NO_AXES
+            updateDrive()
+            sendMove(STOPPED)
+        },
+        squat: () => {
+            logPress("gamepad.squat", "hold B")
+            squat("gamepad")
+        },
+        joy: (sample) => {
+            if (stateRef.current?.record?.active) {
+                call("POST", "api/joy", sample).catch(() => {})
+            }
+        },
+    })
 
     // ── speed sliders: shown live while dragging, saved to the backend's settings ──
     const saveSpeed = useCallback((key: "linearSpeed" | "turnSpeed", value: number) => {
@@ -385,9 +455,34 @@ export function App() {
                 run: () => call("PUT", "api/simulator", { enabled: !simulating }).catch((e) => showToast(message(e))),
             })
         }
+        if (state?.record?.active) {
+            actions.push({
+                id: "record-stop",
+                label: "Stop recording",
+                group: "Recording",
+                icon: "stop",
+                run: () => call("POST", "api/record/stop").catch((e) => showToast(message(e))),
+            })
+        } else {
+            actions.push({
+                id: "record-start",
+                label: "Record",
+                group: "Recording",
+                icon: "record",
+                run: () => call("POST", "api/record/start").catch((e) => showToast(message(e))),
+            })
+        }
         actions.push({ id: "estop", label: "E-STOP", group: "Robot", shortcut: "Space", icon: "stop", run: estop })
-        return actions
+        // a palette pick is a press too
+        return actions.map((action) => ({
+            ...action,
+            run: () => {
+                logPress(`palette.${action.id}`, action.label)
+                action.run()
+            },
+        }))
     }, [
+        state?.record?.active,
         commands,
         cameraClaimed,
         state?.devices.lidarClaimed,
@@ -410,11 +505,14 @@ export function App() {
             }
             if (e.code === "Space") {
                 e.preventDefault()
+                if (!e.repeat) {
+                    logPress("keyboard.estop", "Space")
+                }
                 estop()
                 return
             }
-            if (confirm) {
-                return // don't drive under a dialog
+            if (confirm || stateRef.current?.overheat) {
+                return // don't drive under a dialog or the overheat warning
             }
             if (e.code === "Slash") {
                 e.preventDefault()
@@ -599,9 +697,13 @@ export function App() {
     }
 
     const pressPad = (dir: Drive, down: boolean) => {
+        if (down && state?.overheat) {
+            return showToast("Robot overheating — acknowledge the warning first")
+        }
         keys.current[dir] = down
         updateDrive()
     }
+    const lidarSilent = state?.record?.active ? state.record.lidarSilentS ?? null : null
 
     const linkLabel = !helperReady
         ? "Helper down"
@@ -642,6 +744,7 @@ export function App() {
                         message={placeholder.message}
                         actions={placeholderButton && (
                             <Button
+                                data-ui="camera.placeholder_action"
                                 variant={placeholderButton.variant}
                                 title={placeholderButton.title}
                                 onClick={placeholderButton.run}
@@ -655,6 +758,7 @@ export function App() {
 
             <Toolbar floating className="topbar">
                 <IconButton
+                    data-ui="top.panels"
                     icon="panels"
                     label="show/hide the telemetry panels"
                     className="panels-btn"
@@ -667,6 +771,7 @@ export function App() {
                     <StatusDot tone={deviceTone(devices?.unitree)} /> SDK
                 </Text>
                 <Button
+                    data-ui="top.lidar_claim"
                     variant="ghost"
                     size="sm"
                     title={lidarClaimed
@@ -678,6 +783,7 @@ export function App() {
                     MID360
                 </Button>
                 <Button
+                    data-ui="top.camera_claim"
                     variant="ghost"
                     size="sm"
                     title={cameraClaimed
@@ -689,6 +795,7 @@ export function App() {
                     RS
                 </Button>
                 <Button
+                    data-ui="top.mode_copy"
                     variant="ghost"
                     size="sm"
                     className="mode"
@@ -711,8 +818,25 @@ export function App() {
                         <Text mono>{hot.celsius.toFixed(0)}°C{hot.name ? " " + hot.name : ""}</Text>
                     </Badge>
                 )}
+                <PadChip pad={pad} linked={helperReady} />
+                {lidarSilent !== null && (
+                    <Badge
+                        dot
+                        tone="danger"
+                        title="Recording, with the lidar claimed and the robot up, but no point clouds arrived (also in the recording's /logs)"
+                    >
+                        Lidar not recording · {lidarSilent}s
+                    </Badge>
+                )}
                 <Spacer />
-                <Button variant="danger" className="estop" title="Zero velocity + Damp (Space)" onClick={estop}>
+                <RecordButton record={state?.record} onToast={showToast} />
+                <Button
+                    data-ui="top.estop"
+                    variant="danger"
+                    className="estop"
+                    title="Zero velocity + Damp (Space)"
+                    onClick={estop}
+                >
                     E-STOP
                 </Button>
             </Toolbar>
@@ -745,6 +869,7 @@ export function App() {
                     <div className="row-between">
                         <Text muted small>Shift boosts ×1.6</Text>
                         <Button
+                            data-ui="speed.reset"
                             variant="ghost"
                             size="sm"
                             onClick={() =>
@@ -826,6 +951,7 @@ export function App() {
                         <>
                             <Text muted mono small>{poseText}</Text>
                             <IconButton
+                                data-ui="pose.expand"
                                 size="sm"
                                 icon={poseBig ? "shrink" : "expand"}
                                 label={poseBig ? "Shrink" : "Expand"}
@@ -859,10 +985,16 @@ export function App() {
                             <Text muted mono small>
                                 {lidarInfo ? `${(lidarInfo.points / 1000).toFixed(0)}k pts` : dash}
                             </Text>
-                            <Button variant="ghost" size="sm" onClick={() => setClaim("lidar", !lidarClaimed)}>
+                            <Button
+                                data-ui="lidar.claim"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setClaim("lidar", !lidarClaimed)}
+                            >
                                 {lidarClaimed ? "Release" : "Connect"}
                             </Button>
                             <IconButton
+                                data-ui="lidar.expand"
                                 size="sm"
                                 icon={lidarBig ? "shrink" : "expand"}
                                 label={lidarBig ? "Shrink" : "Expand"}
@@ -907,6 +1039,7 @@ export function App() {
                     {DPAD.map(({ dir, icon, help }) => (
                         <IconButton
                             key={dir}
+                            data-ui={`drive.${dir}`}
                             icon={icon}
                             size="lg"
                             variant="default"
@@ -929,11 +1062,15 @@ export function App() {
                 </div>
             </div>
 
-            {panelsOpen && <div className="scrim" onClick={() => setPanelsOpen(false)} />}
+            {panelsOpen && <div className="scrim" data-ui-skip onClick={() => setPanelsOpen(false)} />}
+            <div className="heat-slot">
+                <MotorHeat celsius={hot?.celsius} joint={hot?.name} />
+            </div>
             <Toolbar floating className="dock">
                 {commands.filter((command) => !command.advanced).map((command) => (
                     <Button
                         key={command.id}
+                        data-ui={`dock.${command.id}`}
                         variant={TONE_VARIANT[command.tone ?? ""] ?? "default"}
                         pressed={command.active || undefined}
                         disabled={!!command.blocked}
@@ -965,8 +1102,9 @@ export function App() {
                 footer={confirm && (
                     <>
                         {/* Cancel first: the modal focuses it, so a stray Enter backs out; Tab reaches confirm */}
-                        <Button onClick={() => setConfirm(null)}>Cancel</Button>
+                        <Button data-ui="confirm.cancel" onClick={() => setConfirm(null)}>Cancel</Button>
                         <Button
+                            data-ui={`confirm.${confirm.command.id}`}
                             variant={confirm.command.danger === "red" ? "danger" : "warn"}
                             onClick={() => {
                                 const run = confirm.run
@@ -982,6 +1120,8 @@ export function App() {
                 {/* the warnings are the app's own text (backend/g1.ts), with <b>/<br> for emphasis */}
                 {confirm && <Text as="p" dangerouslySetInnerHTML={{ __html: confirm.command.warn ?? "" }} />}
             </Modal>
+
+            {state?.overheat && <OverheatWarning warning={state.overheat} state={state} onToast={showToast} />}
         </div>
     )
 }

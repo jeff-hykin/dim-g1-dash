@@ -190,6 +190,40 @@ blocked by the current mode are dimmed there too, with the reason inline.
 Releasing a drive key stops the robot, so the pad has no stop button — that's
 what `Space` (E-STOP) is for.
 
+## Gamepad
+
+| Pad | Action |
+| --- | --- |
+| left stick | forward / back, strafe |
+| right stick X | turn |
+| `LT` (pull) or `RB` | boost, up to ×1.6 (like `Shift`) |
+| `B` or `LT`+`RT` | STOP: zero velocity, held until `A` (never E-STOP — that damps) |
+| `A` | drive again after a stop; Squat on the overheat warning |
+| hold `B` 1 s | Squat (the controlled one below) |
+
+Nothing drives until the sticks have been seen centered; a disconnect, a blur or a
+hidden page zeroes it and asks for centered sticks again (`frontend/src/gamepad.ts`,
+tested in `frontend/test/`).
+
+## Recording and logs
+
+**Record** (top bar) writes an `.mcap` to Desktop's recordings folder under `g1/`:
+`/state` (IMU, joints, battery, hottest motor), `/loco`, `/lidar`, `/color_image`,
+`/cmd_vel`, `/robot_action`, `/joystick` and `/logs`. It only ever starts when
+someone presses it (or calls `api/record/start`), and stays on until
+"Stop recording" in the `/` palette or the app quits; a file a crash left open
+is finished on the next start.
+
+`g1-ctrl.log` (in the app's data folder) and, while recording, `/logs` get every
+button press (`data-ui` ids → `api/ui/press`), notices, helper log lines, the
+overheat warning, camera notes, and a health sample every 2 s: CPU, load, memory,
+the Wi-Fi (interface, SSID, signal, bitrates, frequency, address) and default
+route. A Wi-Fi drop or change, a weak signal, the helper down or silent, or a
+pegged CPU dumps the last samples (`health_dump`). While recording, `rx_stats`
+(what the helper sent, per second) and the hottest motor every 5 s go to `/logs`,
+and a claimed lidar that sends nothing for 20 s while the robot is up shows a
+**Lidar not recording** badge.
+
 ## Using it off-robot
 
 G1 Ctrl is designed to run onboard, but a laptop **plugged into the robot's
@@ -208,5 +242,16 @@ instead of dead widgets.
 Driving is failsafe: the helper only keeps the robot moving while fresh `move`
 commands arrive (~0.4 s window; `api/move` with `durationMs` re-sends for at most 5 s). Losing panel focus, closing the app, or any pipe
 drop halts motion on its own — nothing latches.
+
+**Overheat:** a motor at 75°C zeroes the velocity, refuses driving, sounds an
+alarm in the page and shows a warning until it's acknowledged; it comes back 5°C
+hotter, or at 75°C again once the motors cool to 70°C. A motor-temperature badge
+above the commands fades in from 65°C and grows from 70 to 80°C. The warning's
+default action (focused, or the pad's `A`) is **Squat**: `api/squat`, the helper's
+`squat`, LocoClient `SetFsmId(706)` — a controlled crouch onto the robot's own
+legs. Nothing squats on its own. Because the helper switches to the `ai` motion
+service first (which damps) and 706 toggles a squatting robot back up,
+`api/squat` is refused unless the robot is up on its legs (walk, primitive walk,
+stand, stiffen) with `ai` already resident (`backend/squat.ts`).
 
 Licensed under Apache-2.0.

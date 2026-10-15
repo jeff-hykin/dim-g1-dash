@@ -6,13 +6,15 @@ caches:
 provides:
   # what its server answers only its own pages (its endpoints: below are the public API)
   private:
-      - api/events/*
-      - api/state/*
-      - api/camera/*
-      - api/lidar/*
-      - api/settings/*
-      - api/simulator/*
-      - api/scan
+    - api/events/*
+    - api/state/*
+    - api/camera/*
+    - api/lidar/*
+    - api/settings/*
+    - api/simulator/*
+    - api/scan
+    - api/ui/*
+    - api/joy
   description: >-
     G1 Ctrl: drive and monitor a Unitree G1 humanoid from its onboard Jetson — modes, postures, gestures, driving,
     E-STOP, the RealSense camera, the MID360 lidar and telemetry
@@ -166,11 +168,92 @@ provides:
         enabled:
           type: boolean
           required: true
+    - method: POST
+      path: api/squat
+      description: >-
+        A CONTROLLED squat down (LocoClient FSM 706: the robot crouches onto its own legs under its controller) — the
+        overheat warning's default action. MOVES THE ROBOT. Zeroes the velocity first. Refused unless the robot is up on
+        its legs (walk, primitive_walk, stand, stiffen) with the 'ai' motion service resident and no sequence running,
+        so it never damps or stands a squatting robot up.
+      params:
+        why:
+          type: string
+          description: 'what asked for it, for the log (e.g. overheat, gamepad)'
+        dryRun: *ref_0
+    - method: POST
+      path: api/overheat/ack
+      description: >-
+        Acknowledge the overheat warning (a motor at 75°C or more): silences it and lets driving resume; it comes back
+        5°C hotter, or at 75°C again once the motors cool to 70°C
+      params:
+        how:
+          type: string
+          description: 'how it was answered, for the log (e.g. dismissed, squat)'
+    - method: POST
+      path: api/overheat/simulate
+      description: >-
+        Simulator only: make the simulated G1's hottest motor read celsius (default 76), to try the overheat warning and
+        the motor-temperature badge; celsius: 0 puts it back to normal
+      params:
+        celsius:
+          type: number
+          description: '°C (0: back to the simulated normal)'
+    - method: POST
+      path: api/ui/press
+      description: >-
+        For pages: a button the user pressed (its data-ui id): logged to g1-ctrl.log, published as a ui_press event and
+        written to the recording's /logs
+      params:
+        id:
+          type: string
+          required: true
+          description: 'the button''s id (data-ui), e.g. control.record'
+        label:
+          type: string
+          description: 'its visible text or title, when that says more'
+    - method: POST
+      path: api/joy
+      description: >-
+        For pages: the raw gamepad (axes, then the triggers' travel; buttons 0/1) on every change — recorded on
+        /joystick while a recording runs, never driven from
+      params:
+        axes:
+          type: array
+          required: true
+        buttons:
+          type: array
+          required: true
+    - method: POST
+      path: api/camera/video_note
+      description: >-
+        For pages: why the camera view didn't start or stopped (or that it recovered) — logged, published as a
+        video_note event and written to the recording's /logs
+      params:
+        note:
+          type: string
+          required: true
+          description: what happened
+    - method: GET
+      path: api/record
+      description: 'The recording in progress: file, path, seconds, bytes, messages, lidar silence; or {active: false}'
+    - method: POST
+      path: api/record/start
+      description: >-
+        Record to an .mcap in Desktop's recordings folder (g1/<date>_<time>_g1_<host>.mcap): state (IMU, joints,
+        battery, hottest motor), loco FSM, lidar, camera, velocities sent, commands, gamepad, and /logs (presses,
+        notices, overheat, health, Wi-Fi). Only ever started by a request like this one; it runs until api/record/stop
+        or the app quits.
+    - method: POST
+      path: api/record/stop
+      description: Stop the recording and finish its file
+    - method: GET
+      path: api/recordings
+      description: 'This app''s recordings (its folder, then each .mcap: name, size, modified, still recording?), newest first'
 # prebuilt cross builds Desktop downloads (if a cache above has them) before building dimosApp, per machine type
 nix:
-    cache:
-        aarch64-linux:
-            - packages.aarch64-darwin.dimosApp-aarch64-linux
-            - packages.x86_64-linux.dimosApp-aarch64-linux
-        x86_64-linux:
-            - packages.aarch64-darwin.dimosApp-x86_64-linux
+  cache:
+    aarch64-linux:
+      - packages.aarch64-darwin.dimosApp-aarch64-linux
+      - packages.x86_64-linux.dimosApp-aarch64-linux
+    x86_64-linux:
+      - packages.aarch64-darwin.dimosApp-x86_64-linux
