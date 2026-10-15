@@ -255,8 +255,11 @@ export function PadChip({ pad, linked }: { pad: GamepadStatus; linked: boolean }
     // a browser lists a pad only after a button press on this page (a reload hides it again until then)
     if (!pad.connected) {
         return (
-            <Badge title="No gamepad seen yet: press any gamepad button (a browser lists a pad only after a press on this page)">
-                <Icon name="gamepad" size={12} /> No gamepad
+            <Badge
+                className="chip chip-pad"
+                title="No gamepad seen yet: press any gamepad button (a browser lists a pad only after a press on this page)"
+            >
+                <Icon name="gamepad" size={12} /> <span className="fit">No gamepad</span>
             </Badge>
         )
     }
@@ -272,9 +275,10 @@ export function PadChip({ pad, linked }: { pad: GamepadStatus; linked: boolean }
     return (
         <Badge
             tone={tone}
+            className="chip chip-pad"
             title={`Gamepad: ${pad.id}\n${GAMEPAD_BINDINGS.map(([b, a]) => `${b}: ${a}`).join("\n")}`}
         >
-            <Icon name="gamepad" size={12} /> {label}
+            <Icon name="gamepad" size={12} /> <span className="fit">{label}</span>
         </Badge>
     )
 }
@@ -321,7 +325,14 @@ export function RecordButton(
             }}
         >
             <Icon name="record" size={14} />
-            {active ? `Recording · ${clock(seconds)} · ${megabytes(record?.bytes ?? 0)}` : "Record"}
+            {active
+                ? (
+                    <span className="rec-text">
+                        Recording · <span className="num rec-time">{clock(seconds)}</span> ·{" "}
+                        <span className="num rec-size">{megabytes(record?.bytes ?? 0)}</span>
+                    </span>
+                )
+                : <span className="rec-text">Record</span>}
         </Button>
     )
 }

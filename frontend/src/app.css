@@ -59,7 +59,6 @@ html, body {
 }
 .topbar .mode {
     padding: 0;
-    max-width: 46ch;
     overflow: hidden;
 }
 
@@ -286,4 +285,81 @@ html, body {
     50% {
         background: color-mix(in srgb, currentColor 35%, var(--bg));
     }
+}
+
+/* ── top-bar chips: a fixed width each, sized for the widest realistic value, so a number changing (or a value
+   arriving) never moves anything in the bar; numbers are tabular and right-aligned, long text is ellipsized ── */
+.topbar .chip {
+    box-sizing: border-box;
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5ch;
+    overflow: hidden;
+    white-space: nowrap;
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+}
+.topbar .chip .fit {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.topbar .chip .num {
+    flex: none;
+    text-align: right;
+}
+.topbar .chip-link {
+    width: 12ch;
+}
+.topbar .mode {
+    flex: none;
+}
+.topbar .chip-mode {
+    width: 36ch;
+}
+.topbar .chip-batt {
+    width: 17ch;
+}
+.topbar .chip-batt .pct {
+    width: 4ch; /* 100% */
+}
+.topbar .chip-temp {
+    width: 27ch;
+}
+.topbar .chip-temp .deg {
+    width: 5ch; /* 100°C */
+}
+.topbar .chip-pad {
+    width: 19ch;
+}
+.topbar .chip-lidar {
+    width: 30ch;
+}
+.topbar .chip-lidar .secs {
+    width: 5ch; /* 9999s */
+}
+.topbar .chip-lidar.idle {
+    visibility: hidden;
+}
+.topbar .rec-btn {
+    flex: none;
+    width: 35ch;
+    justify-content: flex-start;
+    overflow: hidden;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+.topbar .rec-btn .rec-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.topbar .rec-btn .rec-time {
+    display: inline-block;
+    width: 6ch; /* 999:59 */
+}
+.topbar .rec-btn .rec-size {
+    display: inline-block;
+    width: 8ch; /* 999.9 MB, 1.23 GB */
 }

@@ -766,7 +766,9 @@ export function App() {
                 />
                 {/* inside Desktop, its window bar already shows the app's icon and name */}
                 {window.parent === window && <Text className="brand">G1 Ctrl</Text>}
-                <Badge dot tone={helperReady ? "ok" : "danger"}>{state ? linkLabel : "Connecting…"}</Badge>
+                <Badge dot tone={helperReady ? "ok" : "danger"} className="chip chip-link">
+                    <span className="fit">{state ? linkLabel : "Connecting…"}</span>
+                </Badge>
                 <Text small>
                     <StatusDot tone={deviceTone(devices?.unitree)} /> SDK
                 </Text>
@@ -804,30 +806,43 @@ export function App() {
                         showToast(await copyText(modeText) ? "copied: " + modeText : "couldn't copy — " + modeText)
                     }}
                 >
-                    <Badge tone={modeTone}>
-                        <Text mono>{modeText}</Text>
+                    <Badge tone={modeTone} className="chip chip-mode">
+                        <span className="fit">{modeText}</span>
                     </Badge>
                 </Button>
-                {battery && (
-                    <Badge dot tone={batteryTone} title="battery charge, and estimated time until 5% reserve">
-                        <Text mono>{battery.percent}%{battery.remaining ? " - " + battery.remaining : ""}</Text>
-                    </Badge>
-                )}
-                {hot && (
-                    <Badge dot tone={tempTone} title="hottest motor — the hotter it runs, the sooner it derates">
-                        <Text mono>{hot.celsius.toFixed(0)}°C{hot.name ? " " + hot.name : ""}</Text>
-                    </Badge>
-                )}
+                {/* always there, at a fixed width (app.css .chip): a value changing or arriving never moves the bar */}
+                <Badge
+                    dot
+                    tone={batteryTone}
+                    className="chip chip-batt"
+                    title="battery charge, and estimated time until 5% reserve"
+                >
+                    <span className="num pct">{battery ? `${battery.percent}%` : dash}</span>
+                    <span className="fit rest">{battery?.remaining ?? ""}</span>
+                </Badge>
+                <Badge
+                    dot
+                    tone={hot ? tempTone : "default"}
+                    className="chip chip-temp"
+                    title={`hottest motor${
+                        hot?.name ? `: ${hot.name}` : ""
+                    } — the hotter it runs, the sooner it derates`}
+                >
+                    <span className="num deg">{hot ? `${hot.celsius.toFixed(0)}°C` : dash}</span>
+                    <span className="fit rest">{hot?.name ?? ""}</span>
+                </Badge>
                 <PadChip pad={pad} linked={helperReady} />
-                {lidarSilent !== null && (
-                    <Badge
-                        dot
-                        tone="danger"
-                        title="Recording, with the lidar claimed and the robot up, but no point clouds arrived (also in the recording's /logs)"
-                    >
-                        Lidar not recording · {lidarSilent}s
-                    </Badge>
-                )}
+                {/* reserved space while hidden, so its arrival doesn't move the bar */}
+                <Badge
+                    dot
+                    tone="danger"
+                    className={`chip chip-lidar${lidarSilent === null ? " idle" : ""}`}
+                    aria-hidden={lidarSilent === null}
+                    title="Recording, with the lidar claimed and the robot up, but no point clouds arrived (also in the recording's /logs)"
+                >
+                    <span className="fit">Lidar not recording</span>
+                    <span className="num secs">{lidarSilent ?? 0}s</span>
+                </Badge>
                 <Spacer />
                 <RecordButton record={state?.record} onToast={showToast} />
                 <Button
