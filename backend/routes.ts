@@ -146,31 +146,39 @@ export const routes: Route[] = [
     {
         method: "GET",
         path: "api/state",
+        when: "you want the robot's mode, battery, motor heat or link status",
         description: "The robot right now: link, devices (claimed/connected), mode, loco FSM, battery, attitude, " +
-            "hottest motor, joint positions, lidar summary, drive settings",
+            "hottest motor, overheat warning, joint positions, lidar summary, drive settings",
         role: "context",
         handler: () => robot.snapshot(),
     },
     {
         method: "GET",
         path: "api/platform",
+        when: "you need to know whether this app runs on the G1's own Jetson",
         description: "Whether this machine is the G1's onboard Jetson (jetson), plus its os, arch and device-tree " +
-            "model. G1 Ctrl only reaches the robot from the Jetson; elsewhere the panel shows a setup guide instead.",
+            "model, and overridden (G1_ONBOARD=1/0 forced jetson). G1 Ctrl only reaches the robot from the Jetson; " +
+            "elsewhere the panel shows a setup guide instead.",
         handler: () => platform(),
     },
     {
         method: "GET",
         path: "api/commands",
+        when: "you want the commands the robot can run now, and which are blocked",
         description: "Every mode/posture/gesture command for api/command, worded for the current mode: what mode it " +
-            "puts the robot in, whether it's dangerous (needs confirm), and why it's blocked right now (if it is)",
+            "puts the robot in, whether it's dangerous (needs confirm), and why it's blocked right now (if it is). " +
+            "Returns {mode, commands: [{id, label, mode, danger, blocked, title, active, ...}]}",
         handler: () => ({ mode: robot.currentMode(), commands: commandsNow() }),
     },
     {
         method: "POST",
         path: "api/command",
+        when: "you need the robot to change mode, posture or do a gesture",
         description: "Run a robot command by id (see api/commands): stiffen, walk, collapse, wave, shake, squat, " +
             "standup, sit, zerotorque, stand, primitive-walk-slow, primitive-walk-fast, wave-turn, release-arms, " +
-            "high-stand, low-stand. MOVES THE ROBOT. Dangerous ones (danger red/amber) need confirm: true.",
+            "high-stand, low-stand. MOVES THE ROBOT. Dangerous ones (danger red/amber) need confirm: true. Returns " +
+            "{ok, sent, command, label, mode (the mode it leads to)}; 409 if blocked in the current mode or " +
+            "dangerous without confirm; 503 if the robot's helper isn't connected.",
         params: {
             command: { type: "string", required: true, description: "the command id" },
             confirm: {
@@ -212,9 +220,12 @@ export const routes: Route[] = [
     {
         method: "POST",
         path: "api/move",
+        when: "you need to drive the robot: walk forward, sideways or turn",
         description: "Drive: body velocity (vx forward m/s, vy left m/s, omega counter-clockwise rad/s). MOVES THE " +
             "ROBOT. The robot stops on its own ~0.4 s after the last move, so either repeat it (the panel sends 15/s) " +
-            "or pass durationMs (≤ 5000) and the backend holds it that long, then stops. Needs mode walk or primitive_walk.",
+            "or pass durationMs (≤ 5000) and the backend holds it that long, then stops. Needs mode walk or primitive_walk " +
+            "(else it is sent with a warning). Returns {ok, sent, durationMs, warning?}; 409 while the overheat " +
+            "warning is up (POST api/overheat/ack).",
         params: {
             vx: { type: "number", description: `m/s, |vx| ≤ ${MOVE_LIMITS.vx.toFixed(2)}` },
             vy: { type: "number", description: `m/s, |vy| ≤ ${MOVE_LIMITS.vy.toFixed(2)}` },
@@ -260,8 +271,9 @@ export const routes: Route[] = [
     {
         method: "POST",
         path: "api/estop",
-        description:
-            "E-STOP: abort any sequence, zero velocity and damp immediately (the robot goes limp). Always allowed.",
+        when: "the robot must stop right now, whatever it is doing",
+        description: "E-STOP: abort any sequence, zero velocity and damp immediately (the robot goes limp). Always " +
+            "allowed. Returns {ok, sent}.",
         params: { dryRun: dryRunParam },
         handler: ({ dryRun }) => {
             if (dryRun !== true && dryRun !== "true") {
@@ -277,25 +289,35 @@ export const routes: Route[] = [
     {
         method: "PUT",
         path: "api/lidar",
+        when: "you need lidar data, or must free the lidar for another program",
         description: "Claim (connected: true) or release the MID360 lidar. It's exclusive: while claimed, other " +
-            "programs (e.g. a SLAM stack) can't use it.",
-        params: { connected: { type: "boolean", required: true }, dryRun: dryRunParam },
+            "programs (e.g. a SLAM stack) can't use it. Returns {ok, sent}.",
+        params: {
+            connected: { type: "boolean", required: true, description: "true claims the lidar, false releases it" },
+            dryRun: dryRunParam,
+        },
         handler: ({ connected, dryRun }) => deliver({ type: "config", lidar: bool(connected, "connected") }, dryRun),
     },
     {
         method: "PUT",
         path: "api/camera",
+        when: "you need the camera turned on (or off) before viewing it",
         description: "Claim (connected: true) or release the RealSense color camera. Exclusive: on a stock G1 " +
-            "Unitree's videohub holds it — see api/camera/takeover.",
-        params: { connected: { type: "boolean", required: true }, dryRun: dryRunParam },
+            "Unitree's videohub holds it — see api/camera/takeover. Returns {ok, sent}.",
+        params: {
+            connected: { type: "boolean", required: true, description: "true claims the camera, false releases it" },
+            dryRun: dryRunParam,
+        },
         handler: ({ connected, dryRun }) => deliver({ type: "config", camera: bool(connected, "connected") }, dryRun),
     },
     {
         method: "POST",
         path: "api/camera/takeover",
+        when: "turning the camera on fails because Unitree's videohub holds it",
         description: "Force the camera free: stop Unitree's master_service and its videohub_pc4 (which hold the " +
             "RealSense from boot), then claim it. The robot doesn't move, but its own video app loses the camera " +
-            "until `sudo systemctl start master_service`. Needs the sudoers rules in the README.",
+            "until `sudo systemctl start master_service`. Needs the sudoers rules in the README. Returns {stopped, " +
+            "message}; 403 if it couldn't stop them.",
         params: { dryRun: dryRunParam },
         handler: async ({ dryRun }) => {
             if (dryRun === true || dryRun === "true") {
@@ -319,8 +341,9 @@ export const routes: Route[] = [
     {
         method: "PUT",
         path: "api/camera/stream",
+        when: "the camera feed is too slow, laggy or low quality",
         description: "Tune the camera stream: maxFps caps the frame rate (0 = uncapped), quality pins JPEG quality " +
-            "(0 = adapt to the link)",
+            "(0 = adapt to the link). Give either or both. Returns {ok, sent}.",
         params: {
             maxFps: { type: "number", description: "0-60, 0 = uncapped" },
             quality: { type: "number", description: "0-100, 0 = adaptive" },
@@ -350,6 +373,7 @@ export const routes: Route[] = [
     {
         method: "GET",
         path: "api/camera/stream",
+        when: "a page needs the continuous live camera video",
         description: "The live camera as an MJPEG stream (multipart/x-mixed-replace; each part has an X-Timestamp " +
             "in ms) — for the page; agents want api/camera/snapshot",
         handler: async (_args, request) => {
@@ -365,7 +389,9 @@ export const routes: Route[] = [
     {
         method: "GET",
         path: "api/camera/snapshot",
-        description: "What the robot's camera sees now, as a JPEG (needs the camera connected)",
+        when: "you want to see what the robot's camera sees",
+        description:
+            "What the robot's camera sees now, as one JPEG image; 503 if the camera isn't connected (PUT api/camera)",
         role: "view",
         handler: async () =>
             new Response(await firstFrame() as BodyInit, {
@@ -375,8 +401,10 @@ export const routes: Route[] = [
     {
         method: "GET",
         path: "api/lidar/cloud",
+        when: "you want the lidar point cloud or the nearest obstacle's distance",
         description: "The MID360 point cloud accumulated over the last ~4 s, robot frame (z up, already flipped for " +
-            "the G1's upside-down mount): flat [x,y,z,…] in meters, plus the nearest obstacle range",
+            "the G1's upside-down mount). Returns {points (count), nearest (m to the nearest obstacle, or null), " +
+            "ageMs, cloud (flat [x,y,z,…] in meters)}; 404 before any lidar data (PUT api/lidar first)",
         handler: () => {
             const cloud = robot.lidarCloud()
             if (!cloud) {
@@ -388,14 +416,18 @@ export const routes: Route[] = [
     {
         method: "GET",
         path: "api/settings",
+        when: "you want the drive speeds or robot IP the panel uses",
         description: "Drive settings: full-stick linear speed (m/s) and turn speed (rad/s) the panel's keys/pad use, " +
-            "and the robot IP used to view its camera from a remote session",
+            "and the robot IP used to view its camera from a remote session: {linearSpeed, turnSpeed, robotIp}",
         handler: () => robot.settings,
     },
     {
         method: "PUT",
         path: "api/settings",
-        description: "Change drive settings (any subset); reset: true restores the defaults",
+        when: "you need to change the panel's drive speeds or the robot IP",
+        description:
+            "Change drive settings (any subset); reset: true restores the default speeds first. Every open page " +
+            "updates. Returns the new settings {linearSpeed, turnSpeed, robotIp}; 400 if a value is out of range",
         params: {
             linearSpeed: { type: "number", description: `m/s, ${DRIVE_LIMITS.linearSpeed.join("-")}` },
             turnSpeed: { type: "number", description: `rad/s, ${DRIVE_LIMITS.turnSpeed.join("-")}` },
@@ -432,7 +464,8 @@ export const routes: Route[] = [
     {
         method: "GET",
         path: "api/log",
-        description: "Recent helper log lines and errors (newest last)",
+        when: "something failed and you want the helper's recent log",
+        description: "Recent helper log lines and errors, newest last: {lines: [{at (ISO time), level, message}]}",
         params: { limit: { type: "number", description: "how many (default 50, max 200)" } },
         handler: ({ limit }) => {
             const n = number(limit, "limit", 50)
@@ -445,9 +478,12 @@ export const routes: Route[] = [
     {
         method: "PUT",
         path: "api/simulator",
+        when: "you want to demo or test without a real robot",
         description: "Run against a built-in simulated G1 instead of the real helper (demos and testing with no " +
-            "robot). Refused while a real helper is connected.",
-        params: { enabled: { type: "boolean", required: true } },
+            "robot). Refused (409) while a real helper is connected. Returns {simulator (whether it's running)}.",
+        params: {
+            enabled: { type: "boolean", required: true, description: "true starts the simulated G1, false stops it" },
+        },
         handler: ({ enabled }) => {
             if (bool(enabled, "enabled")) {
                 try {
@@ -465,10 +501,12 @@ export const routes: Route[] = [
     {
         method: "POST",
         path: "api/squat",
+        when: "the robot should crouch down safely, e.g. a motor is overheating",
         description: "A CONTROLLED squat down (LocoClient FSM 706: the robot crouches onto its own legs under its " +
             "controller) — the overheat warning's default action. MOVES THE ROBOT. Zeroes the velocity first. Refused " +
             "unless the robot is up on its legs (walk, primitive_walk, stand, stiffen) with the 'ai' motion service " +
-            "resident and no sequence running, so it never damps or stands a squatting robot up.",
+            "resident and no sequence running, so it never damps or stands a squatting robot up. Returns {ok, sent}; " +
+            "409 with the reason when refused.",
         params: {
             why: { type: "string", description: "what asked for it, for the log (e.g. overheat, gamepad)" },
             dryRun: dryRunParam,
@@ -484,17 +522,21 @@ export const routes: Route[] = [
     {
         method: "POST",
         path: "api/overheat/ack",
+        when: "the overheat warning is up and you've dealt with it",
         description:
             "Acknowledge the overheat warning (a motor at 75°C or more): silences it and lets driving resume; " +
-            "it comes back 5°C hotter, or at 75°C again once the motors cool to 70°C",
+            "it comes back 5°C hotter, or at 75°C again once the motors cool to 70°C. Returns {acknowledged, " +
+            "warning, afterMs}, or {acknowledged: false, note} when no warning is up",
         params: { how: { type: "string", description: "how it was answered, for the log (e.g. dismissed, squat)" } },
         handler: ({ how }) => robot.acknowledgeOverheat(text(how, 40) || "acknowledged"),
     },
     {
         method: "POST",
         path: "api/overheat/simulate",
+        when: "you want to try the overheat warning in the simulator",
         description: "Simulator only: make the simulated G1's hottest motor read celsius (default 76), to try the " +
-            "overheat warning and the motor-temperature badge; celsius: 0 puts it back to normal",
+            "overheat warning and the motor-temperature badge; celsius: 0 puts it back to normal. Returns {ok, " +
+            "celsius}; 409 when not running the simulator",
         params: { celsius: { type: "number", description: "°C (0: back to the simulated normal)" } },
         handler: ({ celsius }) => {
             const value = number(celsius, "celsius", 76)
@@ -509,8 +551,9 @@ export const routes: Route[] = [
     {
         method: "POST",
         path: "api/ui/press",
+        when: "a page needs to log a button the user pressed",
         description: "For pages: a button the user pressed (its data-ui id): logged to g1-ctrl.log, published as a " +
-            "ui_press event and written to the recording's /logs",
+            "ui_press event and written to the recording's /logs. Returns {ok}.",
         params: {
             id: { type: "string", required: true, description: "the button's id (data-ui), e.g. control.record" },
             label: { type: "string", description: "its visible text or title, when that says more" },
@@ -526,9 +569,17 @@ export const routes: Route[] = [
     {
         method: "POST",
         path: "api/joy",
+        when: "a page needs to record the raw gamepad state",
         description: "For pages: the raw gamepad (axes, then the triggers' travel; buttons 0/1) on every change — " +
-            "recorded on /joystick while a recording runs, never driven from",
-        params: { axes: { type: "array", required: true }, buttons: { type: "array", required: true } },
+            "recorded on /joystick while a recording runs, never driven from. Returns {ok}.",
+        params: {
+            axes: {
+                type: "array",
+                required: true,
+                description: "numbers: the sticks' axes, then the triggers' travel (first 32 kept)",
+            },
+            buttons: { type: "array", required: true, description: "0 or 1 per button (first 32 kept)" },
+        },
         handler: ({ axes, buttons }) => {
             if (!Array.isArray(axes) || !Array.isArray(buttons)) {
                 throw new HttpError(400, "axes and buttons must be arrays")
@@ -540,9 +591,10 @@ export const routes: Route[] = [
     {
         method: "POST",
         path: "api/camera/video_note",
+        when: "a page needs to log why its camera view failed or recovered",
         description:
             "For pages: why the camera view didn't start or stopped (or that it recovered) — logged, published " +
-            "as a video_note event and written to the recording's /logs",
+            "as a video_note event and written to the recording's /logs. Returns {ok}.",
         params: { note: { type: "string", required: true, description: "what happened" } },
         handler: ({ note }) => {
             const said = text(note, 300)
@@ -555,17 +607,21 @@ export const routes: Route[] = [
     {
         method: "GET",
         path: "api/record",
+        when: "you want to know whether a recording is running, and its size",
         description:
-            "The recording in progress: file, path, seconds, bytes, messages, lidar silence; or {active: false}",
+            "The recording in progress: {active: true, file, path, startedAt (ms), seconds, bytes, messages, " +
+            "lidarSilentS (seconds the lidar has been silent, or null)}; or {active: false}",
         handler: () => recordingStatus(),
     },
     {
         method: "POST",
         path: "api/record/start",
+        when: "you need to record the robot's data to an mcap file",
         description: "Record to an .mcap in Desktop's recordings folder (g1/<date>_<time>_g1_<host>.mcap): state " +
             "(IMU, joints, battery, hottest motor), loco FSM, lidar, camera, velocities sent, commands, gamepad, and " +
             "/logs (presses, notices, overheat, health, Wi-Fi). Only ever started by a request like this one; it runs " +
-            "until api/record/stop or the app quits.",
+            "until api/record/stop or the app quits. Returns its status (as GET api/record); if one is already " +
+            "running, that one's.",
         handler: () => {
             try {
                 const status = startRecording()
@@ -579,7 +635,10 @@ export const routes: Route[] = [
     {
         method: "POST",
         path: "api/record/stop",
-        description: "Stop the recording and finish its file",
+        when: "you need to stop the recording in progress",
+        description:
+            "Stop the recording and finish its file: {active: false, stopped: true, file, bytes}, or {active: false, " +
+            "stopped: false} if none was running",
         handler: () => {
             const result = stopRecording()
             publishEvent({ type: "record", record: recordingStatus() })
@@ -589,8 +648,10 @@ export const routes: Route[] = [
     {
         method: "GET",
         path: "api/recordings",
-        description: "This app's recordings (its folder, then each .mcap: name, size, modified, still recording?), " +
-            "newest first",
+        when: "you want the list of this app's recording files",
+        description:
+            "This app's recordings: {directory, recordings: [{file, bytes, modified (ISO time), recording (still " +
+            "being written)}]}, newest first",
         handler: () => listRecordings(),
     },
 ]

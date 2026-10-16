@@ -8,6 +8,8 @@ export type Route = {
     method: "GET" | "POST" | "PUT" | "DELETE"
     /** relative to the app, e.g. `api/scan`; `{name}` segments become params */
     path: string
+    /** when to use it: reads after "If ", e.g. "you need to drive the robot forward" */
+    when: string
     description: string
     params?: Params
     /** "view": what Desktop's screenshot() calls; "context": what desktop_context adds while the app is focused */
@@ -47,9 +49,10 @@ function match(route: Route, method: string, path: string): Record<string, strin
 export function describe(description: string, routes: Route[]) {
     return {
         description,
-        endpoints: routes.map(({ method, path, description, params, role }) => ({
+        endpoints: routes.map(({ method, path, when, description, params, role }) => ({
             method,
             path,
+            when,
             description,
             ...(params ? { params } : {}),
             ...(role ? { role } : {}),
