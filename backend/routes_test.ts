@@ -2,7 +2,7 @@
 // actuating calls are also exercised with dryRun.
 import { assert, assertEquals, assertMatch } from "@std/assert"
 import { handle } from "./http.ts"
-import { DESCRIPTION, routes } from "./routes.ts"
+import { INFO, routes } from "./routes.ts"
 import { detectPlatform } from "./platform.ts"
 import * as robot from "./robot.ts"
 
@@ -10,7 +10,7 @@ const call = async (method: string, path: string, body?: unknown) => {
     const response = await handle(
         new Request(`http://app/${path}`, { method, body: body === undefined ? undefined : JSON.stringify(body) }),
         routes,
-        DESCRIPTION,
+        INFO,
     )
     const type = response!.headers.get("content-type") ?? ""
     return {
@@ -151,9 +151,10 @@ Deno.test("lidar cloud, settings, log, simulator", options, async () => {
     robot.useTestTransport(() => {}) // stops the simulator's timers
 })
 
-Deno.test("agent.json lists every route", options, async () => {
-    const { json } = await call("GET", "agent.json")
-    assertEquals(json.endpoints.length, routes.length)
+Deno.test("openapi.json lists every route", options, async () => {
+    const { json } = await call("GET", "openapi.json")
+    assertEquals(json.openapi, "3.1.0")
+    assertEquals(Object.values(json.paths).flatMap((item) => Object.keys(item as object)).length, routes.length)
 })
 
 Deno.test("api/platform: a Jetson only on aarch64 Linux with Tegra or a Jetson/Orin model", options, async () => {

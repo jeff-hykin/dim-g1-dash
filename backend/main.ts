@@ -5,7 +5,7 @@ import { dimosApp } from "./dimos_app.ts"
 import { startHealth } from "./health.ts"
 import { eventsSocket, handle, publishEvent } from "./http.ts"
 import { recordingStatus, recoverRecordings } from "./recording.ts"
-import { DESCRIPTION, routes } from "./routes.ts"
+import { INFO, routes } from "./routes.ts"
 import { linkKind, ready, snapshot, start } from "./robot.ts"
 
 function flag(name: string): string | undefined {
@@ -44,7 +44,7 @@ async function serve(request: Request): Promise<Response> {
     if (path === "/api/events/ws") {
         return eventsSocket(request)
     }
-    return (await handle(request, routes, DESCRIPTION)) ?? file(path)
+    return (await handle(request, routes, INFO)) ?? file(path)
 }
 
 initLog()

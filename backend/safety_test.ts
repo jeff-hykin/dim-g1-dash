@@ -16,7 +16,7 @@ import {
     stopRecording,
 } from "./recording.ts"
 import { conditions, defaultRoutes, linkKey, parseIwLink, systemTicks } from "./health.ts"
-import { DESCRIPTION, routes } from "./routes.ts"
+import { INFO, routes } from "./routes.ts"
 import { SQUAT_FSM, SQUAT_MESSAGE, squatRefusal } from "./squat.ts"
 import * as robot from "./robot.ts"
 
@@ -28,7 +28,7 @@ const call = async (method: string, path: string, body?: unknown) => {
     const response = await handle(
         new Request(`http://app/${path}`, { method, body: body === undefined ? undefined : JSON.stringify(body) }),
         routes,
-        DESCRIPTION,
+        INFO,
     )
     return { status: response!.status, json: await response!.json() }
 }

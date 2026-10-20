@@ -104,7 +104,7 @@ The G1's three interfaces — the **MID360** lidar, the **RealSense** camera, an
 DDS) — all need native code, so a standalone **C++ helper** (`g1_helper_cpp`) owns all three and speaks newline-JSON
 over stdio. The backend (Deno, `backend/`) runs it and turns everything into HTTP endpoints; the panel (TypeScript +
 Vite + React, `frontend/`) calls only those endpoints and follows `api/events/ws` for live state. Desktop's agent calls
-the same endpoints (listed in `dimos.yaml` `agent:` and served as `agent.json`).
+the same endpoints (listed in `dimos.yaml` `provides:` and served as `openapi.json`).
 
 ```
 panel / agent  ⇄  backend (Deno: HTTP + events ws)  ⇄  g1_helper (C++)  ⇄  MID360 · RealSense · G1

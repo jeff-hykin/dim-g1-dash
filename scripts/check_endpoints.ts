@@ -1,28 +1,36 @@
-// dimos.yaml's `provides:` must list exactly the backend's routes (method + path), so Desktop sees every endpoint even
-// before the app runs; and its `uses:` must declare every Desktop endpoint the pages call (a path under /dimos-gateway/
-// (or the older /dimos/) or Desktop's /api/, absolute or ../-relative; the app's own api/ is relative).
-// `deno task check-endpoints` (CI runs it); `--write` rewrites its description and endpoints.
+// dimos.yaml's `provides:` (an OpenAPI 3.1 document) must list exactly the backend's routes (method + path), so Desktop
+// sees every endpoint even before the app runs; and its `uses:` must declare every Desktop endpoint the pages call (a
+// path under /dimos-gateway/ (or the older /dimos/) or Desktop's /api/, absolute or ../-relative; the app's own api/ is
+// relative). `deno task check-endpoints` (CI runs it); `--write` rewrites its info and paths.
 import { parse, stringify } from "@std/yaml"
-import { describe } from "../backend/http.ts"
-import { DESCRIPTION, routes } from "../backend/routes.ts"
+import { openapi } from "../backend/http.ts"
+import { INFO, routes } from "../backend/routes.ts"
+
+/** An OpenAPI document's operations, as `GET api/thing`. */
+function operations(doc: { paths?: object } | undefined): string[] {
+    return Object.entries(doc?.paths ?? {}).flatMap(([path, item]) =>
+        Object.keys(item).filter((method) => ["get", "post", "put", "patch", "delete"].includes(method))
+            .map((method) => `${method.toUpperCase()} ${path.replace(/^\//, "")}`)
+    )
+}
 
 const file = new URL("../dimos.yaml", import.meta.url)
 const yaml = parse(await Deno.readTextFile(file)) as Record<string, unknown>
-const want = describe(DESCRIPTION, routes)
+const want = openapi(INFO, routes)
 if (Deno.args.includes("--write")) {
-    yaml.provides = { ...(yaml.provides as Record<string, unknown>), ...want }
+    const provides = (yaml.provides ?? {}) as { info?: object }
+    yaml.provides = { ...provides, ...want, info: { ...provides.info, ...want.info } }
     await Deno.writeTextFile(file, stringify(yaml, { lineWidth: 120 }))
-    console.log(`wrote ${want.endpoints.length} endpoints into dimos.yaml`)
+    console.log(`wrote ${operations(want).length} endpoints into dimos.yaml`)
     Deno.exit(0)
 }
-const key = (e: { method: string; path: string }) => `${e.method} ${e.path}`
-const have = new Set(((yaml.provides as { endpoints?: { method: string; path: string }[] })?.endpoints ?? []).map(key))
-const need = new Set(want.endpoints.map(key))
+const have = new Set(operations(yaml.provides as { paths?: object }))
+const need = new Set(operations(want))
 const missing = [...need].filter((k) => !have.has(k))
 const extra = [...have].filter((k) => !need.has(k))
 if (missing.length || extra.length) {
     console.error(
-        `dimos.yaml's provides endpoints differ from backend/routes.ts:\n  missing: ${
+        `dimos.yaml's provides: paths differ from backend/routes.ts:\n  missing: ${
             missing.join(", ") || "-"
         }\n  extra: ${extra.join(", ") || "-"}\nrun: deno task check-endpoints --write`,
     )

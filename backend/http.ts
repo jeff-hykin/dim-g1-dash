@@ -1,6 +1,7 @@
 // The app's HTTP API: every user-facing action is a route here, so the UI and Desktop's agent drive the app the same
-// way. `routes` is also served as agent.json (Desktop's agent finds the endpoints there; dimos.yaml repeats them, and
-// `deno task check-endpoints` keeps the two in step). Docs: dimos-desktop docs/apps.md, docs/agent.md.
+// way. `routes` is also served as openapi.json (Desktop's agent finds the endpoints there; dimos.yaml's `provides:`
+// repeats them, and `deno task check-endpoints` keeps the two in step). Docs: dimos-desktop docs/apps.md,
+// docs/agent.md.
 
 export type Params = Record<string, { type: string; description?: string; required?: boolean; items?: unknown }>
 
@@ -45,27 +46,73 @@ function match(route: Route, method: string, path: string): Record<string, strin
     return params
 }
 
-/** What agent.json / dimos.yaml say about the routes. */
-export function describe(description: string, routes: Route[]) {
-    return {
-        description,
-        endpoints: routes.map(({ method, path, when, description, params, role }) => ({
-            method,
-            path,
-            when,
-            description,
-            ...(params ? { params } : {}),
-            ...(role ? { role } : {}),
-        })),
+/** The app's API: its title, version (major = breaking, minor = added) and description. */
+export type Info = { title: string; version: string; description: string }
+
+/** A parameter's schema; a bare one is a string. */
+const typed = (schema: object) => Object.keys(schema).length ? schema : { type: "string" }
+
+/** What openapi.json / dimos.yaml's `provides:` say about the routes: an OpenAPI 3.1 document, where a route's `{name}`
+ * params are path parameters, GET/DELETE's others query parameters, and POST/PUT's others a JSON body. */
+export function openapi(info: Info, routes: Route[]) {
+    const paths: Record<string, Record<string, unknown>> = {}
+    for (const { method, path, when, description, params = {}, role } of routes) {
+        const text = description.trim().split(/\s+/).join(" ")
+        const operation: Record<string, unknown> = { [text.length <= 100 ? "summary" : "description"]: text }
+        if (when) {
+            operation["x-when"] = when
+        }
+        if (role) {
+            operation["x-dimos-role"] = role
+        }
+        const inPath = [...path.matchAll(/\{(\w+)\}/g)].map((match) => match[1])
+        const parameters: Record<string, unknown>[] = inPath.map((name) => {
+            const { required: _, description, ...schema } = params[name] ?? { type: "string" }
+            return { name, in: "path", required: true, schema: typed(schema), ...(description ? { description } : {}) }
+        })
+        const properties: Record<string, unknown> = {}
+        const required: string[] = []
+        for (const [name, { required: isRequired, ...schema }] of Object.entries(params)) {
+            if (inPath.includes(name)) {
+                continue
+            }
+            properties[name] = schema
+            if (isRequired) {
+                required.push(name)
+            }
+        }
+        if (method === "GET" || method === "DELETE") {
+            for (const [name, { description, ...schema }] of Object.entries(properties as Params)) {
+                parameters.push({
+                    name,
+                    in: "query",
+                    schema: typed(schema),
+                    ...(required.includes(name) ? { required: true } : {}),
+                    ...(description ? { description } : {}),
+                })
+            }
+        } else if (Object.keys(properties).length) {
+            const schema = { type: "object", properties, ...(required.length ? { required } : {}) }
+            operation.requestBody = { content: { "application/json": { schema } } }
+        }
+        if (parameters.length) {
+            operation.parameters = parameters
+        }
+        paths[`/${path}`] = { ...paths[`/${path}`], [method.toLowerCase()]: operation }
     }
+    return { openapi: "3.1.0", info, paths }
 }
 
-/** Handles `/api/...` + `/agent.json`; null for anything else (the static frontend). */
-export async function handle(request: Request, routes: Route[], description: string): Promise<Response | null> {
+/** Handles `/api/...` + `/openapi.json`; null for anything else (the static frontend). */
+export async function handle(request: Request, routes: Route[], info: Info): Promise<Response | null> {
     const url = new URL(request.url)
     const path = url.pathname.replace(/^\/+/, "")
+    if (path === "openapi.json") {
+        return Response.json(openapi(info, routes))
+    }
     if (path === "agent.json") {
-        return Response.json(describe(description, routes))
+        // openapi.json replaced it; a 404 (not the page) sends Desktop on to openapi.json
+        return Response.json({ error: "see openapi.json" }, { status: 404 })
     }
     for (const route of routes) {
         const pathParams = match(route, request.method, path)

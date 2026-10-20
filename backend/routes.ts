@@ -1,7 +1,7 @@
 // Every G1 Ctrl action, as an endpoint (http.ts). The panel calls only these, and so can Desktop's agent. Anything
 // that moves or reconfigures the robot takes `dryRun: true`, which validates and answers with what would be sent
 // without sending it.
-import { HttpError, publishEvent, type Route } from "./http.ts"
+import { HttpError, type Info, publishEvent, type Route } from "./http.ts"
 import {
     blockedReason,
     COMMANDS,
@@ -16,8 +16,13 @@ import { platform } from "./platform.ts"
 import { listRecordings, record, recordingStatus, recordLog, startRecording, stopRecording } from "./recording.ts"
 import * as robot from "./robot.ts"
 
-export const DESCRIPTION = "G1 Ctrl: drive and monitor a Unitree G1 humanoid from its onboard Jetson — modes, " +
-    "postures, gestures, driving, E-STOP, the RealSense camera, the MID360 lidar and telemetry"
+export const INFO: Info = {
+    title: "G1 Ctrl",
+    version: "1.0.0",
+    description:
+        "G1 Ctrl: drive and monitor a Unitree G1 humanoid from its onboard Jetson — modes, postures, gestures, " +
+        "driving, E-STOP, the RealSense camera, the MID360 lidar and telemetry",
+}
 
 const dryRunParam = {
     type: "boolean",
