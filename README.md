@@ -150,7 +150,7 @@ overrides the check) until the simulator is on or the helper reaches the robot L
 ## Development
 
 ```sh
-cd frontend && npm install && npm run build && cd ..
+cd frontend && deno task build && cd ..
 deno task dev                  # backend on :8787 serving frontend/dist (G1_SIMULATE=1 for the simulator)
 deno task test                 # backend/routes_test.ts — never touches a robot
 deno task check                # types + dimos.yaml lists every route (check-endpoints --write regenerates it)
