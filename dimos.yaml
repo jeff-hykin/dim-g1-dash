@@ -1,5 +1,6 @@
 title: G1 Ctrl
-spec-version: v1.0 # the dimos.yaml spec version this file follows
+spec-version: v1.3 # the dimos.yaml spec version this file follows
+version: "0.1.7" # this app's own version (its latest release tag)
 caches:
   - url: 'https://dimos-desktop.cachix.org'
     key: 'dimos-desktop.cachix.org-1:A4P35aGJGmCan92LWyamtSFXMqaVE+VRFYnrJ8QMTeQ='
