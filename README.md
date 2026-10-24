@@ -207,7 +207,9 @@ tested in `frontend/test/`).
 
 ## Recording and logs
 
-**Record** (top bar) writes an `.mcap` to Desktop's recordings folder under `g1/`:
+**Record** (top bar) writes an `.mcap` to Desktop's recordings folder under `g1/`
+— the folder the dimos gateway names (`GET history/recordings`), asked once when
+the server starts, with `DIMOS_APP`'s `recordingsDir` standing in off Desktop:
 `/state` (IMU, joints, battery, hottest motor), `/loco`, `/lidar`, `/color_image`,
 `/cmd_vel`, `/robot_action`, `/joystick` and `/logs`. It only ever starts when
 someone presses it (or calls `api/record/start`), and stays on until

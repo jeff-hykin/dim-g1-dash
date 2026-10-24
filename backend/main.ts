@@ -1,7 +1,7 @@
 // dimos-app-server: this app's API and its built frontend on the unix socket Desktop gives (DIMOS_APP's `socket`, the
 // one interface: docs/apps.md), else port 8787 (G1_DASH_PORT) for a standalone run. `--frontend` is the nix wrapper's, not Desktop's.
 import { initLog } from "./applog.ts"
-import { dimosApp } from "./dimos_app.ts"
+import { dimosApp, loadRecordingsRoot } from "./dimos_app.ts"
 import { startHealth } from "./health.ts"
 import { eventsSocket, handle, publishEvent } from "./http.ts"
 import { recordingStatus, recoverRecordings } from "./recording.ts"
@@ -48,6 +48,7 @@ async function serve(request: Request): Promise<Response> {
 }
 
 initLog()
+await loadRecordingsRoot() // the one lookup of Desktop's recordings folder: every recordingsDir() below reads it
 recoverRecordings() // a recording a quit or crash ended gets its footer, so it opens
 start() // the robot link: the native helper (or G1_SIMULATE=1)
 startHealth({
