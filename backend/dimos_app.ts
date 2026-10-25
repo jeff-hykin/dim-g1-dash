@@ -1,10 +1,21 @@
 // What dimOS Desktop tells this server at start: the DIMOS_APP env var, one JSON object (dimos-desktop docs/apps.md).
 // Desktop passes no flags or other variables.
+// Its `secrets` section is the one part never to print or pass on. Nothing here prints the object, which is what
+// Desktop otherwise has to redact the zenoh-gateway token out of; if that ever changes, print `loggable()` of it.
 // Where recordings live is the dimos gateway's to say, not DIMOS_APP's: `GET /gateways/dimos/history/recordings`
 // answers {path}. loadRecordingsRoot() asks once at start and recordingsDir() reads what it got; DIMOS_APP's
 // recordingsDir only stands in while the gateway hasn't answered (no Desktop, or it couldn't be reached).
 
-export type DimosApp = { socket?: string; dataDir?: string; recordingsDir?: string; desktopUrl?: string }
+export type DimosApp = {
+    socket?: string
+    dataDir?: string
+    recordingsDir?: string
+    desktopUrl?: string
+    /** names this machine in a recording's metadata; Desktop 0.2.226 and newer */
+    machineId?: string
+    /** this app's secrets (its zenohGatewayToken among them): never print it, never pass it on */
+    secrets?: Record<string, string>
+}
 
 let parsed: DimosApp | null = null
 
@@ -19,6 +30,12 @@ export function dimosApp(): DimosApp {
         parsed = {}
     }
     return parsed
+}
+
+/** `DIMOS_APP` with its `secrets` left out: what may be printed. */
+export function loggable(app: DimosApp = dimosApp()): Omit<DimosApp, "secrets"> {
+    const { secrets: _secrets, ...rest } = app
+    return rest
 }
 
 /** Where the app keeps its log: G1_DASH_DATA_DIR, else Desktop's dataDir, else ~/.local/share/dim-g1-dash. */

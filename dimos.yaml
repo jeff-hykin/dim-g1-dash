@@ -1,9 +1,20 @@
 title: G1 Ctrl
-spec-version: v1.4 # the dimos.yaml spec version this file follows
-version: "0.2.3" # this app's own version (its latest release tag)
+spec-version: v1.5 # the dimos.yaml spec version this file follows
+version: "0.3.0" # this app's own version (its latest release tag)
 uses:
   # where recordings go is the dimos gateway's to say (its {path}), not ours: the backend asks it once at start
   "@dimos-gateway": [GET history/recordings]
+  "@desktop-gateway":
+    # what this server reads of DIMOS_APP (backend/dimos_app.ts); `app check` says when Desktop doesn't set one, and a
+    # launch that can't resolve one says so in this app's log. No endpoints: it calls Desktop's API for nothing else.
+    env:
+      DIMOS_APP.socket: the unix socket this server binds
+      DIMOS_APP.dataDir: its own folder, for its log
+      DIMOS_APP.desktopUrl: Desktop's loopback origin, which the dimos gateway is asked through
+      # the last resort only: GET history/recordings above is the answer, and this stands in until it has answered
+      DIMOS_APP.recordingsDir:
+        required: false
+        description: where recordings go until the gateway has answered
 caches:
   - url: 'https://dimos-desktop.cachix.org'
     key: 'dimos-desktop.cachix.org-1:A4P35aGJGmCan92LWyamtSFXMqaVE+VRFYnrJ8QMTeQ='
