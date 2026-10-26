@@ -1,12 +1,15 @@
 /* G1 Ctrl's layout only: where dimos-react's components float over the camera. Every look (color, border, type) is
    the components' own; the only colors here are theme tokens. */
-html, body {
+html,
+body {
     height: 100%;
     margin: 0;
     overflow: hidden;
 }
 /* iOS ignores unprefixed user-select: a long press on a pad arrow selected the glyph mid-drive */
-.dpad, .dock, .topbar {
+.dpad,
+.dock,
+.topbar {
     -webkit-user-select: none;
     user-select: none;
     -webkit-touch-callout: none;
@@ -28,13 +31,15 @@ html, body {
     overflow: hidden;
 }
 /* contain: the whole frame stays visible, which matters when you drive off it */
-#cam, #cam-canvas {
+#cam,
+#cam-canvas {
     width: 100%;
     height: 100%;
     object-fit: contain;
     display: none;
 }
-.cam-wrap.live.via-img #cam, .cam-wrap.live.via-canvas #cam-canvas {
+.cam-wrap.live.via-img #cam,
+.cam-wrap.live.via-canvas #cam-canvas {
     display: block;
 }
 .cam-placeholder {

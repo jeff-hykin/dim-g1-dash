@@ -1,6 +1,6 @@
 title: G1 Ctrl
 spec-version: v1.5 # the dimos.yaml spec version this file follows
-version: "0.3.0" # this app's own version (its latest release tag)
+version: "0.3.1" # this app's own version (its latest release tag)
 uses:
   # where recordings go is the dimos gateway's to say (its {path}), not ours: the backend asks it once at start
   "@dimos-gateway": [GET history/recordings]

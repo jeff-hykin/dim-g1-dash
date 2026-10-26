@@ -232,7 +232,7 @@ export function snapshot() {
 }
 
 // state goes out at most 10×/s, always with the latest values
-let stateTimer: number | null = null
+let stateTimer: ReturnType<typeof setTimeout> | null = null
 export function publishState() {
     if (stateTimer !== null) {
         return
@@ -480,7 +480,7 @@ export async function cameraTakeover(): Promise<{ stopped: boolean; message: str
 
 // ── timed moves: the helper stops the robot unless a move arrives every ~0.4 s, so a move with a duration is
 // re-sent at 15 Hz until it ends, then zeroed. Any newer move or E-STOP cancels it. ──
-let moveTimer: number | null = null
+let moveTimer: ReturnType<typeof setInterval> | null = null
 
 export function cancelTimedMove() {
     if (moveTimer !== null) {
@@ -519,7 +519,7 @@ const SIM_FSM: Record<string, [number, number]> = {
     sit: [3, 0],
     balancestand: [801, 0],
 }
-let simTimers: number[] = []
+let simTimers: ReturnType<typeof setInterval>[] = []
 /** the simulator's hottest motor, when api/overheat/simulate set it */
 let simHot: number | null = null
 

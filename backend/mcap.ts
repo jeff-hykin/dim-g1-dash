@@ -63,7 +63,7 @@ export type Channel = { id: number; topic: string; schemaId: number }
 export class McapWriter {
     #file: Deno.FsFile
     #pending: Uint8Array[] = []
-    #flushTimer: number
+    #flushTimer: ReturnType<typeof setInterval>
     #schemas = new Map<string, { id: number; record: Uint8Array }>()
     #channels = new Map<string, Channel & { record: Uint8Array }>()
     #counts = new Map<number, number>()

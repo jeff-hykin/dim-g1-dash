@@ -24,7 +24,7 @@ jobs:
               run: nix build --no-link .#dimosApp-aarch64-linux .#dimosApp-x86_64-linux -L # --no-link: ./result stays the native build the steps below run
             - uses: denoland/setup-deno@v2
               with:
-                  deno-version: v2.5.0
+                  deno-version: v2.9.8
             - run: deno task test
             - run: deno task check
             - run: deno fmt --check && deno lint
