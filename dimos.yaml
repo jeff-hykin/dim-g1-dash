@@ -16,6 +16,8 @@ uses:
         required: false
         description: where recordings go until the gateway has answered
 caches:
+  - url: 'https://pub-18ed8210d82a4563a7e7269c4ce48a1c.r2.dev'
+    key: 'dimos-nix-cache-1:f6JE9qRFzxGAbwEYBxRkB7LsSYvIVv9BXfhsRm0kqPk='
   - url: 'https://dimos-desktop.cachix.org'
     key: 'dimos-desktop.cachix.org-1:A4P35aGJGmCan92LWyamtSFXMqaVE+VRFYnrJ8QMTeQ='
 provides:
