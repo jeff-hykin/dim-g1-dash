@@ -627,7 +627,7 @@ export function App() {
                             {" "}
                             <code>ssh unitree@192.168.123.164</code>{" "}
                             from a machine plugged into the robot), then install{" "}
-                            <code>https://github.com/jeff-hykin/dim-g1-dash</code>{" "}
+                            <code>https://github.com/dimensionalOS/dim-g1-ctrl</code>{" "}
                             there and open the panel served from the robot.
                         </p>
                         <p>
