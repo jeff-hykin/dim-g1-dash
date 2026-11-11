@@ -3,7 +3,7 @@
 A [dimOS Desktop](https://github.com/dimensionalOS/dimos-desktop) app for driving and
 monitoring a **Unitree G1** humanoid — running *onboard the robot's Jetson*.
 
-Unlike [dim-go2-dash](https://github.com/jeff-hykin/dim-go2-dash) (which discovers
+Unlike [dim-go2-dash](https://github.com/dimensionalOS/dim-go2-ctrl) (which discovers
 and provisions a quadruped from a laptop), G1 Ctrl lives on the G1 itself and
 talks straight to its hardware:
 
@@ -139,7 +139,7 @@ Everything the panel can do is an endpoint (`backend/routes.ts`). Anything that 
 ## Install
 
 ```sh
-dimos-desktop install https://github.com/jeff-hykin/dim-g1-dash
+dimos-desktop install https://github.com/dimensionalOS/dim-g1-ctrl
 ```
 
 Requirements: the G1's onboard computer (aarch64 Jetson), or an x86_64 Linux machine on the robot LAN, with the MID360,
